@@ -1,0 +1,11 @@
+Checks: '-*,readability-identifier-naming'
+CheckOptions:
+  # For local variables
+  - key:             readability-identifier-naming.Variable.Style
+    value:           lower_case
+  # For global variables
+  - key:             readability-identifier-naming.GlobalVariable.Style
+    value:           lower_case
+  # For function parameters
+  - key:             readability-identifier-naming.Parameter.Style
+    value:           lower_case
