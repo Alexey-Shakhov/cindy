@@ -139,8 +139,10 @@ VkImage create_image(
         VkFormat format,
         VkImageUsageFlags usage,
         int width,
-        int height)
+        int height,
+        bool cpu_side)
 {
+    VkImageTiling tiling = cpu_side ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_OPTIMAL;
     VkImageCreateInfo image_ci = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
@@ -151,13 +153,15 @@ VkImage create_image(
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .tiling = tiling,
         .usage = usage,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
 
+    VmaAllocationCreateFlags flags = cpu_side ? VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+        | VMA_ALLOCATION_CREATE_MAPPED_BIT : VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
     VmaAllocationCreateInfo alloc_ci = {
-        .flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT,
+        .flags = flags,
         .usage = VMA_MEMORY_USAGE_AUTO};
     VkImage image;
     if (vmaCreateImage(vma, &image_ci, &alloc_ci,
@@ -247,6 +251,9 @@ void transition_image_layout(
     case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
         image_memory_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
         break;
+    case VK_IMAGE_LAYOUT_GENERAL:
+        image_memory_barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        break;
     default:
         fatal("Can't handle image layout in set_image_layout.");
         break;
@@ -269,6 +276,9 @@ void transition_image_layout(
     case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
         image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         break;
+    case VK_IMAGE_LAYOUT_GENERAL:
+        image_memory_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        break;
     default:
         fatal("Can't handle image layout in set_image_layout.");
         break;
@@ -280,4 +290,26 @@ void transition_image_layout(
         .pImageMemoryBarriers = &image_memory_barrier
     };
     vkCmdPipelineBarrier2(cmdbuffer, &barrier_dependency_info);
+}
+
+VkImageCopy image_copy(VkImageAspectFlags aspect_mask, uint32_t width, uint32_t height) {
+    VkImageCopy copy = {
+        .srcSubresource.aspectMask = aspect_mask,
+        .srcSubresource.layerCount = 1,
+        .dstSubresource.aspectMask = aspect_mask,
+        .dstSubresource.layerCount = 1,
+        .extent.width = width,
+        .extent.height = height,
+        .extent.depth = 1,
+    };
+    return copy;
+}
+
+VkFence create_fence(VkDevice device) {
+    VkFence fence;
+    VkFenceCreateInfo fence_ci = {
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+    };
+    chk(vkCreateFence(device, &fence_ci, NULL, &fence));
+    return fence;
 }

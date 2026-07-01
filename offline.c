@@ -1,5 +1,6 @@
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 
 #include <vulkan/vk_enum_string_helper.h>
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
@@ -59,7 +60,7 @@ VkImage create_depth_attachment_with_view(
     }
     *p_format = depth_format;
     VkImage depth_image = create_image(vma, p_allocation, depth_format,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, width, height);
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, width, height, false);
     *p_image_view = create_image_view(device, depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT);
     return depth_image;
 }
@@ -77,7 +78,7 @@ VkImage create_normal_attachment_with_view(
     VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;
     *p_format = format;
     VkImage normal_image = create_image(vma, p_allocation, format,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height);
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
     *p_image_view = create_image_view(device, normal_image, format, VK_IMAGE_ASPECT_COLOR_BIT);
     return normal_image;
 }
@@ -130,7 +131,7 @@ int main() {
     const int image_width = 1920;
 
     color_image = create_image(vma, &color_image_allocation, COLOR_IMAGE_FORMAT,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, image_width, image_height);
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, image_width, image_height, false);
     color_image_view = create_image_view(device, color_image, COLOR_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
 
     depth_image = create_depth_attachment_with_view(
@@ -382,125 +383,185 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         .pDynamicState = &dynamic_state,
         .layout = pipeline_layout};
     chk(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &pipeline));
-    {
-        SceneUniforms uniforms;
-        glm_perspective(glm_rad(45.0f), (float)image_width / (float)image_height,
-            0.1f, 32.0f, uniforms.proj);
-        mat4 mat_identity; glm_mat4_identity(mat_identity);
-        glm_translate_to(mat_identity, cam_pos, uniforms.view);
-        memcpy(shader_data_buffer.alloc_info.pMappedData,
-               &uniforms, sizeof(SceneUniforms));
 
-        PushConstants pc = {
-            .object_id = 3,
-            .model = {},
-            .scene_uniforms = shader_data_buffer.device_address,
-        };
-        vec3 model_pos = { 1.0f, 0.0f, 0.0f };
-        glm_translate_to(mat_identity, model_pos, pc.model);
+    SceneUniforms uniforms;
+    glm_perspective(glm_rad(45.0f), (float)image_width / (float)image_height,
+        0.1f, 32.0f, uniforms.proj);
+    mat4 mat_identity; glm_mat4_identity(mat_identity);
+    glm_translate_to(mat_identity, cam_pos, uniforms.view);
+    memcpy(shader_data_buffer.alloc_info.pMappedData,
+           &uniforms, sizeof(SceneUniforms));
 
-        chk(vkResetCommandBuffer(cb, 0));
-        VkCommandBufferBeginInfo cb_bi = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-        chk(vkBeginCommandBuffer(cb, &cb_bi));
+    PushConstants pc = {
+        .object_id = 1225,
+        .model = {},
+        .scene_uniforms = shader_data_buffer.device_address,
+    };
+    vec3 model_pos = { 1.5f, 0.0f, 0.0f };
+    glm_translate_to(mat_identity, model_pos, pc.model);
 
-        transition_image_layout(
-                cb, color_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
-        );
-        transition_image_layout(
-                cb, normal_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
-        );
-        transition_image_layout(
-                cb, depth_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                VK_IMAGE_ASPECT_DEPTH_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
-        );
+    chk(vkResetCommandBuffer(cb, 0));
+    VkCommandBufferBeginInfo cb_bi = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    chk(vkBeginCommandBuffer(cb, &cb_bi));
 
-        VkRenderingAttachmentInfo color_attachment_infos[2] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                .imageView = color_image_view,
-                .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                .clearValue = {.color = {{0.8f, 0.8f, 0.8f, 1.0f}}}
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                .imageView = normal_image_view,
-                .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                .clearValue = {.color = {{0.0f, 0.0f, 0.0f, 1.0f}}}
-            }
-        };
-        VkRenderingAttachmentInfo depthAttachmentInfo = {
+    transition_image_layout(
+            cb, color_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+    );
+    transition_image_layout(
+            cb, normal_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
+    );
+    transition_image_layout(
+            cb, depth_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_ASPECT_DEPTH_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
+    );
+
+    VkRenderingAttachmentInfo color_attachment_infos[2] = {
+        {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = depth_image_view,
+            .imageView = color_image_view,
             .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .clearValue = {.depthStencil = {1.0f, 0}}
-        };
+            .clearValue = {.color = {{0.8f, 0.8f, 0.8f, 1.0f}}}
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = normal_image_view,
+            .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+            .clearValue = {.color = {{0.0f, 0.0f, 0.0f, 1.0f}}}
+        }
+    };
+    VkRenderingAttachmentInfo depthAttachmentInfo = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = depth_image_view,
+        .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = {.depthStencil = {1.0f, 0}}
+    };
 
-        VkRenderingInfo renderingInfo = {
-            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-            .renderArea = {.extent = {.width = (uint32_t)(image_width),
-                                      .height = (uint32_t)(image_height)}},
-            .layerCount = 1,
-            .colorAttachmentCount = 2,
-            .pColorAttachments = color_attachment_infos,
-            .pDepthAttachment = &depthAttachmentInfo};
-        vkCmdBeginRendering(cb, &renderingInfo);
-        VkViewport vp = {.width = (float)(image_width),
-                      .height = (float)(image_height),
-                      .minDepth = 0.0f,
-                      .maxDepth = 1.0f};
-        vkCmdSetViewport(cb, 0, 1, &vp);
-        VkRect2D scissor = {
-            .extent = {.width = (uint32_t)(image_width),
-                    .height = (uint32_t)(image_height)}};
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdSetScissor(cb, 0, 1, &scissor);
-        VkDeviceSize vOffset = 0;
-        vkCmdBindVertexBuffers(cb, 0, 1, &vibuf, &vOffset);
-        vkCmdBindIndexBuffer(cb, vibuf, vbuf_size, VK_INDEX_TYPE_UINT32);
-        vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(PushConstants), &pc);
-        vkCmdDrawIndexed(cb, index_count, 1, 0, 0, 0);
-        vkCmdEndRendering(cb);
-        transition_image_layout(
-                cb, color_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
-        );
+    VkRenderingInfo renderingInfo = {
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = {.extent = {.width = (uint32_t)(image_width),
+                                  .height = (uint32_t)(image_height)}},
+        .layerCount = 1,
+        .colorAttachmentCount = 2,
+        .pColorAttachments = color_attachment_infos,
+        .pDepthAttachment = &depthAttachmentInfo};
+    vkCmdBeginRendering(cb, &renderingInfo);
+    VkViewport vp = {.width = (float)(image_width),
+                  .height = (float)(image_height),
+                  .minDepth = 0.0f,
+                  .maxDepth = 1.0f};
+    vkCmdSetViewport(cb, 0, 1, &vp);
+    VkRect2D scissor = {
+        .extent = {.width = (uint32_t)(image_width),
+                .height = (uint32_t)(image_height)}};
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    vkCmdSetScissor(cb, 0, 1, &scissor);
+    VkDeviceSize vOffset = 0;
+    vkCmdBindVertexBuffers(cb, 0, 1, &vibuf, &vOffset);
+    vkCmdBindIndexBuffer(cb, vibuf, vbuf_size, VK_INDEX_TYPE_UINT32);
+    vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       sizeof(PushConstants), &pc);
+    vkCmdDrawIndexed(cb, index_count, 1, 0, 0, 0);
+    vkCmdEndRendering(cb);
 
-        chk(vkEndCommandBuffer(cb));
-        VkSubmitInfo submitInfo = {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .waitSemaphoreCount = 0,
-            .pWaitSemaphores = NULL,
-            .pWaitDstStageMask = NULL,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &cb,
-            .signalSemaphoreCount = 0,
-            .pSignalSemaphores = NULL,
-        };
-        chk(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+    // Copy color image to CPU buffer
+    transition_image_layout(
+            cb, color_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
+    );
+
+    VmaAllocation save_color_image_allocation;
+    VkImage save_color_image = create_image(
+            vma,
+            &save_color_image_allocation,
+            COLOR_IMAGE_FORMAT,
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            image_width,
+            image_height,
+            true
+    );
+    transition_image_layout(cb, save_color_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
+    );
+
+    VkImageCopy color_image_copy = image_copy(VK_IMAGE_ASPECT_COLOR_BIT, image_width, image_height);
+    vkCmdCopyImage(cb, color_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, save_color_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, &color_image_copy);
+
+    transition_image_layout(cb, save_color_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+            VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
+    );
+
+    chk(vkEndCommandBuffer(cb));
+    VkFence fence = create_fence(device);
+    VkFrameBoundaryEXT frameBoundary = {
+        .sType = VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT,
+        .flags = VK_FRAME_BOUNDARY_FRAME_END_BIT_EXT,
+    };
+    VkSubmitInfo submitInfo = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = &frameBoundary,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = NULL,
+        .pWaitDstStageMask = NULL,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cb,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = NULL,
+    };
+    chk(vkQueueSubmit(queue, 1, &submitInfo, fence));
+    chk(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
+    vkDestroyFence(device, fence, NULL);
+
+    VkImageSubresource subresource = {
+        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+    };
+    VkSubresourceLayout subresource_layout;
+    vkGetImageSubresourceLayout(device, save_color_image, &subresource, &subresource_layout);
+
+    VmaAllocationInfo alloc_info;
+    vmaGetAllocationInfo(vma, save_color_image_allocation, &alloc_info);
+    char* pixel_data = alloc_info.pMappedData + subresource_layout.offset;
+
+    FILE* file = fopen("color.ppm", "wb");
+    if (!file) {
+        fatal("Failed to open color image for writing.");
     }
+    fprintf(file, "P6\n%d\n%d\n255\n", image_width, image_height);
+    for (uint32_t y = 0; y < image_height; y++) {
+        for (uint32_t x = 0; x < image_width; x++) {
+            fwrite(pixel_data + x * 4 + 2, 1, 1, file);
+            fwrite(pixel_data + x * 4 + 1, 1, 1, file);
+            fwrite(pixel_data + x * 4, 1, 1, file);
+        }
+        pixel_data += subresource_layout.rowPitch;
+    }
+    fclose(file);
 
     chk(vkDeviceWaitIdle(device));
+
     vkDestroyPipeline(device, pipeline, NULL);
     vkDestroyPipelineLayout(device, pipeline_layout, NULL);
     vkDestroyShaderModule(device, shader_module, NULL);
     vmaDestroyBuffer(vma, shader_data_buffer.buffer, shader_data_buffer.alloc);
+
+    vmaDestroyImage(vma, save_color_image, save_color_image_allocation);
     vkDestroyImageView(device, color_image_view, NULL);
     vmaDestroyImage(vma, color_image, color_image_allocation);
     vkDestroyImageView(device, depth_image_view, NULL);
     vmaDestroyImage(vma, depth_image, depth_image_allocation);
     vkDestroyImageView(device, normal_image_view, NULL);
     vmaDestroyImage(vma, normal_image, normal_image_allocation);
+
     vkDestroyCommandPool(device, command_pool, NULL);
     vmaDestroyBuffer(vma, vibuf, vibuf_alloc);
     vmaDestroyAllocator(vma);

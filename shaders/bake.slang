@@ -43,17 +43,27 @@ VSOutput vertex_main(VSInput input) {
     return output;
 }
 
+// Wang Hash for 32-bit integers
+uint wangHash(uint seed) {
+    seed = (seed ^ 61) ^ (seed >> 16);
+    seed *= 9;
+    seed = seed ^ (seed >> 4);
+    seed *= 0x27d4eb2d;
+    seed = seed ^ (seed >> 15);
+    return seed;
+}
+
 [shader("fragment")]
 FSOutput fragment_main(VSOutput input) {
     FSOutput output;
 
     uint id = pc.objectID;
-    output.outID = float4(
-        float((id >> 0) & 0xFFu) / 255.0,
-        float((id >> 8) & 0xFFu) / 255.0,
-        float((id >> 16) & 0xFFu) / 255.0,
-        1.0
-    );
+    uint hash = wangHash(id);
+    float r = float((hash >> 0) & 0xFF) / 255.0;
+    float g = float((hash >> 8) & 0xFF) / 255.0;
+    float b = float((hash >> 16) & 0xFF) / 255.0;
+
+    output.outID = float4(r, g, b, 1.0);
 
     float3 n = normalize(input.viewNormal);
     output.outNormal = float4(n * 0.5 + 0.5, 1.0);
