@@ -475,14 +475,13 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
                 cb, color_image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                 VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
         );
-        chk(vkEndCommandBuffer(cb));
 
-        VkPipelineStageFlags wait_stages = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        chk(vkEndCommandBuffer(cb));
         VkSubmitInfo submitInfo = {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .waitSemaphoreCount = 0,
             .pWaitSemaphores = NULL,
-            .pWaitDstStageMask = &wait_stages,
+            .pWaitDstStageMask = NULL,
             .commandBufferCount = 1,
             .pCommandBuffers = &cb,
             .signalSemaphoreCount = 0,
