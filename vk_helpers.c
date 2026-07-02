@@ -292,7 +292,7 @@ void transition_image_layout(
     vkCmdPipelineBarrier2(cmdbuffer, &barrier_dependency_info);
 }
 
-VkImageCopy image_copy(VkImageAspectFlags aspect_mask, uint32_t width, uint32_t height) {
+VkImageCopy create_image_copy(VkImageAspectFlags aspect_mask, uint32_t width, uint32_t height) {
     VkImageCopy copy = {
         .srcSubresource.aspectMask = aspect_mask,
         .srcSubresource.layerCount = 1,
@@ -312,4 +312,17 @@ VkFence create_fence(VkDevice device) {
     };
     chk(vkCreateFence(device, &fence_ci, NULL, &fence));
     return fence;
+}
+
+VkCommandBuffer allocate_command_buffer(VkDevice device, VkCommandPool command_pool) {
+    VkCommandBufferAllocateInfo cb_alloc_info = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = command_pool,
+        .commandBufferCount = 1,
+    };
+    VkCommandBuffer cb;
+    if (vkAllocateCommandBuffers(device, &cb_alloc_info, &cb) != VK_SUCCESS) {
+        fatal("Failed to allocate command buffers.");
+    }
+    return cb;
 }
