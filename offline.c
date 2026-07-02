@@ -274,7 +274,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
 
     size_t code_size = 0;
     uint32_t* spirv;
-    if (read_binary_file("shaders/compiled/bake.spirv", (char**) &spirv, &code_size)) {
+    if (read_binary_file("shaders/bake.spirv", (char**) &spirv, &code_size)) {
         fatal("Failed to read shader SPIR-V.");
     }
     VkShaderModuleCreateInfo shader_module_ci = {
@@ -532,7 +532,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     vmaGetAllocationInfo(vma, save_color_image_allocation, &alloc_info);
     char* pixel_data = alloc_info.pMappedData + subresource_layout.offset;
 
-    FILE* file = fopen("color.ppm", "wb");
+    FILE* file = fopen("offline-output/color.ppm", "wb");
     if (!file) {
         fatal("Failed to open color image for writing.");
     }
