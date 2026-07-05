@@ -4,12 +4,12 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vk_enum_string_helper.h>
-#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
 #include "vk_mem_alloc.h"
 #include "cglm/cglm.h"
 #include "cglm/struct.h"
 
 #include "utils.c"
+#include "vk_helpers.c"
 
 #define MAX_FRAMES_IN_FLIGHT 2
 const VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_SRGB;
@@ -219,7 +219,7 @@ VkImage create_depth_attachment_with_view(
     }
     *p_format = depth_format;
     VkImage depth_image = create_image(vma, p_allocation, depth_format,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, width, height);
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, width, height, false);
     *p_image_view = create_image_view(device, depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT);
     return depth_image;
 }
@@ -237,7 +237,7 @@ VkImage create_normal_attachment_with_view(
     VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;
     *p_format = format;
     VkImage normal_image = create_image(vma, p_allocation, format,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height);
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
     *p_image_view = create_image_view(device, normal_image, format, VK_IMAGE_ASPECT_COLOR_BIT);
     return normal_image;
 }
@@ -250,10 +250,16 @@ int main() {
 
     st.window = create_window();
     glfwGetWindowSize(st.window, &st.window_w, &st.window_h);
-    st.instance = create_instance();
+
+    uint32_t ext_count;
+    const char** extensions = glfwGetRequiredInstanceExtensions(&ext_count);
+    st.instance = create_instance(ext_count, extensions);
+
     st.physical_device = choose_physical_device(st.instance);
     st.queue_fam = choose_queue_family(st.instance, st.physical_device);
-    st.device = create_logical_device(st.instance, st.physical_device, st.queue_fam);
+
+    const char* dev_extensions[1] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    st.device = create_logical_device(st.instance, st.physical_device, st.queue_fam, 1, dev_extensions);
     vkGetDeviceQueue(st.device, st.queue_fam, 0, &st.queue);
     st.vma = create_vma(st.physical_device, st.device, st.instance);
 
@@ -444,7 +450,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
 
     size_t code_size = 0;
     uint32_t* spirv;
-    if (read_binary_file("shaders/compiled/bake.spirv", (char**) &spirv, &code_size)) {
+    if (read_binary_file("shaders/bake.spirv", (char**) &spirv, &code_size)) {
         fatal("Failed to read shader SPIR-V.");
     }
     VkShaderModuleCreateInfo shader_module_ci = {
