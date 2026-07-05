@@ -3,7 +3,6 @@
 #include <stdio.h>
 
 #include <vulkan/vk_enum_string_helper.h>
-#define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
 #include "vk_mem_alloc.h"
 #include "cglm/cglm.h"
 #include "cglm/struct.h"
