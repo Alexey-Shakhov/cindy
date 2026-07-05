@@ -234,25 +234,25 @@ void transition_image_layout(
         image_memory_barrier.srcAccessMask = 0;
         break;
     case VK_IMAGE_LAYOUT_PREINITIALIZED:
-        image_memory_barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+        image_memory_barrier.srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT;
         break;
     case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        image_memory_barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        image_memory_barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         break;
     case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-        image_memory_barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        image_memory_barrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         break;
     case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-        image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        image_memory_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
         break;
     case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-        image_memory_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        image_memory_barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         break;
     case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-        image_memory_barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        image_memory_barrier.srcAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
         break;
     case VK_IMAGE_LAYOUT_GENERAL:
-        image_memory_barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        image_memory_barrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
         break;
     default:
         fatal("Can't handle image layout in set_image_layout.");
@@ -262,22 +262,22 @@ void transition_image_layout(
     switch (new_image_layout)
     {
     case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-        image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        image_memory_barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         break;
     case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-        image_memory_barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        image_memory_barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
         break;
     case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        image_memory_barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        image_memory_barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
         break;
     case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-        image_memory_barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        image_memory_barrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         break;
     case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-        image_memory_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        image_memory_barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
         break;
     case VK_IMAGE_LAYOUT_GENERAL:
-        image_memory_barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        image_memory_barrier.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
         break;
     default:
         fatal("Can't handle image layout in set_image_layout.");

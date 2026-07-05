@@ -60,7 +60,7 @@ VkImage create_depth_attachment_with_view(
     }
     *p_format = depth_format;
     VkImage depth_image = create_image(vma, p_allocation, depth_format,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, width, height, false);
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
     *p_image_view = create_image_view(device, depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT);
     return depth_image;
 }
@@ -103,30 +103,49 @@ void save_texture(
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     chk(vkBeginCommandBuffer(cb, &cb_bi));
-
     transition_image_layout(
             cb, image, image_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             aspect_mask, initial_stage, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
     );
-    VmaAllocation save_image_allocation;
-    VkImage save_image = create_image(
-            vma,
-            &save_image_allocation,
-            format,
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-            image_width,
-            image_height,
-            true
-    );
-    transition_image_layout(cb, save_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            aspect_mask, initial_stage, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
-    );
-    VkImageCopy image_copy = create_image_copy(aspect_mask, image_width, image_height);
-    vkCmdCopyImage(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, save_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            1, &image_copy);
-    transition_image_layout(cb, save_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-            aspect_mask, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
-    );
+
+    int pixel_size;
+    switch (format) {
+        case VK_FORMAT_B8G8R8A8_UNORM:
+        case VK_FORMAT_D32_SFLOAT:
+            pixel_size = 4;
+            break;
+        default:
+            fatal("Can't handle output image format in save_texture.");
+    }
+
+    VkBufferCreateInfo dest_buf_ci = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = pixel_size * image_width * image_height,
+        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    };
+    VmaAllocationCreateInfo dest_buf_alloc_ci = {
+        .usage = VMA_MEMORY_USAGE_AUTO,
+        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT,
+    };
+    VkBuffer dest_buf;
+    VmaAllocation dest_buf_alloc;
+    VmaAllocationInfo dest_buf_ai;
+    vmaCreateBuffer(vma, &dest_buf_ci, &dest_buf_alloc_ci, &dest_buf, &dest_buf_alloc, &dest_buf_ai);
+
+    VkBufferImageCopy copy = {
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource.aspectMask = aspect_mask,
+        .imageSubresource.mipLevel = 0,
+        .imageSubresource.baseArrayLayer = 0,
+        .imageSubresource.layerCount = 1,
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {image_width, image_height, 1},
+    };
+    vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dest_buf, 1, &copy);
+
     chk(vkEndCommandBuffer(cb));
     VkFence fence = create_fence(device);
     VkSubmitInfo submit_info = {
@@ -143,41 +162,17 @@ void save_texture(
     chk(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
     vkDestroyFence(device, fence, NULL);
 
-    VkImageSubresource subresource = {
-        .aspectMask = aspect_mask,
-    };
-    VkSubresourceLayout subresource_layout;
-    vkGetImageSubresourceLayout(device, save_image, &subresource, &subresource_layout);
-
-    VmaAllocationInfo alloc_info;
-    vmaGetAllocationInfo(vma, save_image_allocation, &alloc_info);
-    char* pixel_data = alloc_info.pMappedData + subresource_layout.offset;
+    char* pixel_data = dest_buf_ai.pMappedData;
 
     FILE* file = fopen(filename, "wb");
     if (!file) {
         fatal("Failed to open color image for writing.");
     }
-    fprintf(file, "P6\n%d\n%d\n255\n", image_width, image_height);
 
-    switch (format) {
-        case VK_FORMAT_B8G8R8A8_UNORM:
-            for (uint32_t y = 0; y < image_height; y++) {
-                for (uint32_t x = 0; x < image_width; x++) {
-                    fwrite(pixel_data + x * 4 + 2, 1, 1, file);
-                    fwrite(pixel_data + x * 4 + 1, 1, 1, file);
-                    fwrite(pixel_data + x * 4, 1, 1, file);
-                }
-                pixel_data += subresource_layout.rowPitch;
-            }
-            break;
-        default:
-            fclose(file);
-            fatal("Can't handle input image format in save_texture.");
-    }
+    fwrite(pixel_data, pixel_size * image_width * image_height, 1, file);
 
     fclose(file);
-
-    vmaDestroyImage(vma, save_image, save_image_allocation);
+    vmaDestroyBuffer(vma, dest_buf, dest_buf_alloc);
 }
 
 int main() {
@@ -506,7 +501,8 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     );
     transition_image_layout(
             cb, depth_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_ASPECT_DEPTH_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
+            VK_IMAGE_ASPECT_DEPTH_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
+            VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT
     );
 
     VkRenderingAttachmentInfo color_attachment_infos[2] = {
@@ -589,7 +585,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_ASPECT_COLOR_BIT,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            image_width, image_height, "offline-output/color.ppm"
+            image_width, image_height, "offline-output/color.bin"
     );
     save_texture(
             device,
@@ -601,7 +597,20 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_ASPECT_COLOR_BIT,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            image_width, image_height, "offline-output/normal.ppm"
+            image_width, image_height, "offline-output/normal.bin"
+    );
+
+    save_texture(
+            device,
+            queue,
+            vma,
+            command_pool,
+            depth_image,
+            depth_format,
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_ASPECT_DEPTH_BIT,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+            image_width, image_height, "offline-output/depth.bin"
     );
 
     chk(vkDeviceWaitIdle(device));
