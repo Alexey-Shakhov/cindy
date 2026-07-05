@@ -14,22 +14,6 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 const VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_SRGB;
 
-typedef struct Vertex {
-    vec3 pos;
-    vec3 normal;
-} Vertex;
-
-typedef struct SceneUniforms {
-    mat4 view;
-    mat4 proj;
-} SceneUniforms;
-
-typedef struct PushConstants {
-    mat4 model;
-    uint32_t object_id;
-    VkDeviceAddress scene_uniforms;
-} PushConstants;
-
 struct State {
     GLFWwindow *window;
     VkInstance instance;
@@ -59,15 +43,8 @@ struct State {
     VkImageView normal_image_view;
     VkFormat normal_format;
 
-    Vertex *vertices;
-    size_t vertex_count;
-    uint32_t *indices;
-    size_t index_count;
-
     VmaAllocation vibuf_alloc;
     VkBuffer vibuf;
-
-    VmaAllocatedBuffer shader_data_buffers[MAX_FRAMES_IN_FLIGHT];
 
     VkSemaphore image_acquired_semaphores[MAX_FRAMES_IN_FLIGHT];
     VkFence fences[MAX_FRAMES_IN_FLIGHT];
@@ -78,6 +55,9 @@ struct State {
     VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
 
     VkDescriptorPool descriptor_pool;
+    VkDescriptorSetLayout desc_set_layout;
+    VkDescriptorSet desc_set;
+
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
 
@@ -146,6 +126,7 @@ VkSwapchainKHR create_swapchain_with_views(
     }
 
     *p_extent = surface_capabilities.currentExtent;
+    // Handle Wayland
     if (surface_capabilities.currentExtent.width == 0xFFFFFFFF) {
         *p_extent = (VkExtent2D) {.width = (uint32_t)window_w, .height = (uint32_t)window_h};
     }
@@ -224,24 +205,6 @@ VkImage create_depth_attachment_with_view(
     return depth_image;
 }
 
-VkImage create_normal_attachment_with_view(
-        VkPhysicalDevice physical_device,
-        VkDevice device,
-        VmaAllocator vma,
-        VmaAllocation* p_allocation,
-        VkImageView* p_image_view,
-        VkFormat* p_format,
-        int width,
-        int height)
-{
-    VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;
-    *p_format = format;
-    VkImage normal_image = create_image(vma, p_allocation, format,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
-    *p_image_view = create_image_view(device, normal_image, format, VK_IMAGE_ASPECT_COLOR_BIT);
-    return normal_image;
-}
-
 int main() {
     // TODO create state_defaults_init function
     st.cam_pos[0] = 0.0f;
@@ -281,113 +244,6 @@ int main() {
     );
     st.command_pool = create_command_pool(st.device, st.queue_fam);
 
-    st.depth_image = create_depth_attachment_with_view(
-            st.physical_device,
-            st.device,
-            st.vma,
-            &st.depth_image_allocation,
-            &st.depth_image_view,
-            &st.depth_format,
-            st.swapchain_extent.width,
-            st.swapchain_extent.height
-    );
-
-    st.normal_image = create_normal_attachment_with_view(
-            st.physical_device,
-            st.device,
-            st.vma,
-            &st.normal_image_allocation,
-            &st.normal_image_view,
-            &st.normal_format,
-            st.swapchain_extent.width,
-            st.swapchain_extent.height
-    );
-
- float positions[24] = { 1.000000, -1.000000, -1.000000,
- 1.000000, -1.000000, 1.000000,
- -1.000000, -1.000000, 1.000000,
- -1.000000, -1.000000, -1.000000,
- 1.000000, 1.000000, -0.999999,
- 0.999999, 1.000000, 1.000001,
- -1.000000, 1.000000, 1.000000,
- -1.000000, 1.000000, -1.000000 };
-
- float texcoords[28] = {1.000000, 0.333333,
- 1.000000, 0.666667,
- 0.666667, 0.666667,
- 0.666667, 0.333333,
- 0.666667, 0.000000,
- 0.000000, 0.333333,
- 0.000000, 0.000000,
- 0.333333, 0.000000,
- 0.333333, 1.000000,
- 0.000000, 1.000000,
- 0.000000, 0.666667,
- 0.333333, 0.333333,
- 0.333333, 0.666667,
- 1.000000, 0.000000, };
-
-float normals[18] = { 0.000000, -1.000000, 0.000000,
- 0.000000, 1.000000, 0.000000,
- 1.000000, 0.000000, 0.000000,
- -0.000000, 0.000000, 1.000000,
- -1.000000, -0.000000, -0.000000,
- 0.000000, 0.000000, -1.000000 };
-
- int ind[108] = { 2,1,1, 3,2,1, 4,3,1,
- 8,1,2, 7,4,2, 6,5,2,
- 5,6,3, 6,7,3, 2,8,3,
- 6,8,4, 7,5,4, 3,4,4,
- 3,9,5, 7,10,5, 8,11,5,
- 1,12,6, 4,13,6, 8,11,6,
- 1,4,1, 2,1,1, 4,3,1,
- 5,14,2, 8,1,2, 6,5,2,
- 1,12,3, 5,6,3, 2,8,3,
- 2,12,4, 6,8,4, 3,4,4,
- 4,13,5, 3,9,5, 8,11,5,
- 5,6,6, 1,12,6, 8,11,6 };
-
-    st.index_count = 36;
-    st.vertex_count = 36;
-    st.indices = malloc(sizeof(uint32_t) * st.index_count);
-    st.vertices = malloc(sizeof(Vertex) * st.vertex_count);
-    for (uint32_t i = 0; i < st.index_count * 3; i++) {
-        ind[i] -= 1;
-    }
-    for (uint32_t i = 0; i < st.index_count; i++) {
-        int p = ind[i * 3];
-        int t = ind[i * 3 + 1];
-        int n = ind[i * 3 + 2];
-        Vertex vertex = {
-            .pos = {positions[p * 3], -positions[p * 3 + 1],
-                    positions[p * 3 + 2]},
-            .normal = {normals[n * 3], -normals[n * 3 + 1],
-                       normals[n * 3 + 2]},
-        };
-        st.vertices[i] = vertex;
-        st.indices[i] = i;
-    }
-
-    VkDeviceSize vbuf_size = sizeof(Vertex) * st.vertex_count;
-    VkDeviceSize ibuf_size = sizeof(uint32_t) * st.index_count;
-    VkBufferCreateInfo buffer_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                                    .size = ibuf_size + vbuf_size,
-                                    .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                                             VK_BUFFER_USAGE_INDEX_BUFFER_BIT};
-    VmaAllocationCreateInfo buffer_alloc_ci = {
-        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                 VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-                 VMA_ALLOCATION_CREATE_MAPPED_BIT,
-        .usage = VMA_MEMORY_USAGE_AUTO};
-    VmaAllocationInfo vibuf_alloc_info = {0};
-    if (vmaCreateBuffer(st.vma, &buffer_ci, &buffer_alloc_ci, &st.vibuf,
-                        &st.vibuf_alloc, &vibuf_alloc_info) != VK_SUCCESS) {
-        fatal("Failed to create vertex / index buffer.");
-    }
-    memcpy(vibuf_alloc_info.pMappedData, st.vertices, vbuf_size);
-    memcpy((char *)vibuf_alloc_info.pMappedData + vbuf_size, st.indices,
-           ibuf_size);
-
     VkSemaphoreCreateInfo semaphore_ci = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     VkFenceCreateInfo fence_ci = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -412,32 +268,6 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         }
     }
 
-    VkBufferCreateInfo ubuf_ci = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = sizeof(SceneUniforms),
-        .usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-    };
-    VmaAllocationCreateInfo ubuf_alloc_ci = {
-        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                 VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-                 VMA_ALLOCATION_CREATE_MAPPED_BIT,
-        .usage = VMA_MEMORY_USAGE_AUTO,
-    };
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vmaCreateBuffer(st.vma, &ubuf_ci, &ubuf_alloc_ci,
-                            &st.shader_data_buffers[i].buffer,
-                            &st.shader_data_buffers[i].alloc,
-                            &st.shader_data_buffers[i].alloc_info) != VK_SUCCESS) {
-            fatal("Failed to creates shader uniform buffer.");
-        }
-        VkBufferDeviceAddressInfo ubuf_addr_info = {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-            .buffer = st.shader_data_buffers[i].buffer
-        };
-        st.shader_data_buffers[i].device_address =
-            vkGetBufferDeviceAddress(st.device, &ubuf_addr_info);
-    }
-
     VkCommandBufferAllocateInfo cb_alloc_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = st.command_pool,
@@ -450,7 +280,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
 
     size_t code_size = 0;
     uint32_t* spirv;
-    if (read_binary_file("shaders/bake.spirv", (char**) &spirv, &code_size)) {
+    if (read_binary_file("shaders/realtime.spirv", (char**) &spirv, &code_size)) {
         fatal("Failed to read shader SPIR-V.");
     }
     VkShaderModuleCreateInfo shader_module_ci = {
@@ -461,16 +291,12 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     VkShaderModule shader_module;
     chk(vkCreateShaderModule(st.device, &shader_module_ci, NULL, &shader_module));
 
-    VkPushConstantRange push_constant_range = {
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT ,
-        .size = sizeof(PushConstants)
-    };
     VkPipelineLayoutCreateInfo pipeline_layout_ci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .setLayoutCount = 0,
         .pSetLayouts = NULL,
-        .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &push_constant_range};
+        .pushConstantRangeCount = 0,
+        .pPushConstantRanges = NULL};
     chk(vkCreatePipelineLayout(st.device, &pipeline_layout_ci, NULL,
                                &st.pipeline_layout));
     VkPipelineShaderStageCreateInfo shader_stages[2] = {
@@ -482,24 +308,12 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
          .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
          .module = shader_module,
          .pName = "fragment_main"}};
-    VkVertexInputBindingDescription vertex_binding = {
-        .binding = 0,
-        .stride = sizeof(Vertex),
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
-    #define VERTEX_ATTR_COUNT 2
-    VkVertexInputAttributeDescription vertex_attributes[VERTEX_ATTR_COUNT] = {
-        {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 0},
-        {.location = 1,
-         .binding = 0,
-         .format = VK_FORMAT_R32G32B32_SFLOAT,
-         .offset = offsetof(Vertex, normal)},
-    };
     VkPipelineVertexInputStateCreateInfo vertex_input_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &vertex_binding,
-        .vertexAttributeDescriptionCount = VERTEX_ATTR_COUNT,
-        .pVertexAttributeDescriptions = vertex_attributes,
+        .vertexBindingDescriptionCount = 0,
+        .pVertexBindingDescriptions = NULL,
+        .vertexAttributeDescriptionCount = 0,
+        .pVertexAttributeDescriptions = NULL,
     };
     VkPipelineInputAssemblyStateCreateInfo input_assembly_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -513,41 +327,35 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 1,
         .scissorCount = 1};
+    VkPipelineMultisampleStateCreateInfo multisample_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+    VkPipelineColorBlendAttachmentState blend_attachment_state = {.colorWriteMask = 0xF};
+    VkPipelineColorBlendStateCreateInfo color_blend_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .attachmentCount = 1,
+        .pAttachments = &blend_attachment_state};
+    VkFormat color_attachment_format = SWAPCHAIN_IMAGE_FORMAT;
+    VkPipelineRenderingCreateInfo rendering_ci = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &color_attachment_format,
+        .depthAttachmentFormat = st.depth_format};
+    VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL};
     VkPipelineRasterizationStateCreateInfo rasterization_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .lineWidth = 1.0f,
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
         .cullMode = VK_CULL_MODE_FRONT_BIT,
     };
-    VkPipelineMultisampleStateCreateInfo multisample_state = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
-    VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = VK_TRUE,
-        .depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL};
-    VkPipelineColorBlendAttachmentState blend_attachment_states[2] = {
-        {.colorWriteMask = 0xF},
-        {.colorWriteMask = 0xF},
-    };
-    VkPipelineColorBlendStateCreateInfo color_blend_state = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .attachmentCount = 2,
-        .pAttachments = blend_attachment_states};
-    VkFormat color_attachment_formats[2] = {
-        SWAPCHAIN_IMAGE_FORMAT,
-        st.normal_format
-    };
-    VkPipelineRenderingCreateInfo rendering_ci = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
-        .colorAttachmentCount = 2,
-        .pColorAttachmentFormats = color_attachment_formats,
-        .depthAttachmentFormat = st.depth_format};
     VkGraphicsPipelineCreateInfo pipeline_ci = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &rendering_ci,
-        .stageCount = 2,
+        .stageCount = 1,
         .pStages = shader_stages,
         .pVertexInputState = &vertex_input_state,
         .pInputAssemblyState = &input_assembly_state,
@@ -561,6 +369,42 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     chk(vkCreateGraphicsPipelines(
                 st.device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &st.pipeline));
 
+    VkDescriptorSetLayoutBinding bindings[3];
+    for (int i=0; i < 3; i++) {
+        bindings[i] = (VkDescriptorSetLayoutBinding) {
+            .binding = i,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        };
+    }
+    VkDescriptorSetLayoutCreateInfo desc_set_layout_ci = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = NULL,
+        .flags = 0,
+        .bindingCount = 3,
+        .pBindings = bindings,
+    };
+    vkCreateDescriptorSetLayout(st.device, &desc_set_layout_ci, NULL, &st.desc_set_layout);
+    VkDescriptorSetAllocateInfo desc_set_alloc = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = NULL,
+        .descriptorPool = st.descriptor_pool,
+        .descriptorSetCount = 1,
+        .pSetLayouts = &st.desc_set_layout
+    };
+	chk(vkAllocateDescriptorSets(st.device, &desc_set_alloc, &st.desc_set));
+
+	VkWriteDescriptorSet write_desc_set = {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = st.desc_set,
+        .dstBinding = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = descriptors[i]
+    };
+	vkUpdateDescriptorSets(device, 1, &writeDescSet, 0, nullptr);
+
     while (!glfwWindowShouldClose(st.window)) {
         glfwPollEvents();
 
@@ -569,21 +413,6 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         chkSwapchain(vkAcquireNextImageKHR(st.device, st.swapchain, UINT64_MAX,
                                            st.image_acquired_semaphores[st.frame_index],
                                            VK_NULL_HANDLE, &st.image_index));
-        SceneUniforms uniforms;
-        glm_perspective(glm_rad(45.0f), (float)st.window_w / (float)st.window_h,
-            0.1f, 32.0f, uniforms.proj);
-        mat4 mat_identity; glm_mat4_identity(mat_identity);
-        glm_translate_to(mat_identity, st.cam_pos, uniforms.view);
-        memcpy(st.shader_data_buffers[st.frame_index].alloc_info.pMappedData,
-               &uniforms, sizeof(SceneUniforms));
-
-        PushConstants pc = {
-            .object_id = 3,
-            .model = {},
-            .scene_uniforms = st.shader_data_buffers[st.frame_index].device_address,
-        };
-        vec3 model_pos = { -3.0f + fmod(glfwGetTime(), 3.0) * 3.0, 0.0f, 0.0f };
-        glm_translate_to(mat_identity, model_pos, pc.model);
 
         VkCommandBuffer cb = st.command_buffers[st.frame_index];
         chk(vkResetCommandBuffer(cb, 0));
@@ -591,79 +420,34 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
             .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
         chk(vkBeginCommandBuffer(cb, &cb_bi));
-        VkImageMemoryBarrier2 output_barriers[3] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                .srcAccessMask = 0,
-                .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                .image = st.swapchain_images[st.image_index],
-                .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                  .levelCount = 1,
-                                  .layerCount = 1}},
-            {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                .srcAccessMask = 0,
-                .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                .image = st.normal_image,
-                .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                                  .levelCount = 1,
-                                  .layerCount = 1}},
-            {
-                .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-                .srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-                .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                .newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                .image = st.depth_image,
-                .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT |
-                                                VK_IMAGE_ASPECT_STENCIL_BIT,
-                                  .levelCount = 1,
-                                  .layerCount = 1}}
+        VkImageMemoryBarrier2 output_barrier = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = 0,
+            .dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+            .image = st.swapchain_images[st.image_index],
+            .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                              .levelCount = 1,
+                              .layerCount = 1}},
         };
         VkDependencyInfo barrier_dependency_info = {
             .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-            .imageMemoryBarrierCount = 3,
-            .pImageMemoryBarriers = output_barriers
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &output_barrier
         };
         vkCmdPipelineBarrier2(cb, &barrier_dependency_info);
 
-        VkRenderingAttachmentInfo color_attachment_infos[2] = {
-            {
-                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                .imageView = st.swapchain_image_views[st.image_index],
-                .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                .clearValue = {.color = {{0.8f, 0.8f, 0.8f, 1.0f}}}
-            },
-            {
-                .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-                .imageView = st.normal_image_view,
-                .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-                .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-                .clearValue = {.color = {{0.0f, 0.0f, 0.0f, 1.0f}}}
-            }
-        };
-        VkRenderingAttachmentInfo depthAttachmentInfo = {
+        VkRenderingAttachmentInfo color_attachment_info = {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = st.depth_image_view,
+            .imageView = st.swapchain_image_views[st.image_index],
             .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .clearValue = {.depthStencil = {1.0f, 0}}
+            .clearValue = {.color = {{0.8f, 0.8f, 0.8f, 1.0f}}}
         };
 
         VkRenderingInfo renderingInfo = {
@@ -671,8 +455,8 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
             .renderArea = {.extent = {.width = (uint32_t)(st.window_w),
                                       .height = (uint32_t)(st.window_h)}},
             .layerCount = 1,
-            .colorAttachmentCount = 2,
-            .pColorAttachments = color_attachment_infos,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &color_attachment_info,
             .pDepthAttachment = &depthAttachmentInfo};
         vkCmdBeginRendering(cb, &renderingInfo);
         VkViewport vp = {.width = (float)(st.window_w),
@@ -681,16 +465,14 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
                       .maxDepth = 1.0f};
         vkCmdSetViewport(cb, 0, 1, &vp);
         VkRect2D scissor = {
-            .extent = {.width = (uint32_t)(st.window_w),
-                    .height = (uint32_t)(st.window_h)}};
+            .extent = {
+                .width = (uint32_t)(st.window_w),
+                .height = (uint32_t)(st.window_h)
+            }
+        };
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, st.pipeline);
         vkCmdSetScissor(cb, 0, 1, &scissor);
-        VkDeviceSize vOffset = 0;
-        vkCmdBindVertexBuffers(cb, 0, 1, &st.vibuf, &vOffset);
-        vkCmdBindIndexBuffer(cb, st.vibuf, vbuf_size, VK_INDEX_TYPE_UINT32);
-        vkCmdPushConstants(cb, st.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                           sizeof(PushConstants), &pc);
-        vkCmdDrawIndexed(cb, st.index_count, 1, 0, 0, 0);
+        vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, st.pipeline_layout, 0, 1, &st.desc_set, 0, NULL);
         vkCmdEndRendering(cb);
         VkImageMemoryBarrier2 barrier_present = {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
@@ -762,19 +544,6 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
             for (int i=0; i < st.swapchain_image_count; i++) {
                 chk(vkCreateSemaphore(st.device, &semaphore_ci, NULL, &st.render_complete_semaphores[i]));
             }
-
-            vmaDestroyImage(st.vma, st.depth_image, st.depth_image_allocation);
-            vkDestroyImageView(st.device, st.depth_image_view, NULL);
-            st.depth_image = create_depth_attachment_with_view(
-                    st.physical_device,
-                    st.device,
-                    st.vma,
-                    &st.depth_image_allocation,
-                    &st.depth_image_view,
-                    &st.depth_format,
-                    st.swapchain_extent.width,
-                    st.swapchain_extent.height
-            );
         }
 
         st.frame_index = (st.frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -806,9 +575,6 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     for (int i = 0; i < st.swapchain_image_count; i++) {
         vkDestroySemaphore(st.device, st.render_complete_semaphores[i], NULL);
     }
-
-    vmaDestroyBuffer(st.vma, st.vibuf, st.vibuf_alloc);
-
     for (int i = 0; i < st.swapchain_image_count; i++) {
         vkDestroyImageView(st.device, st.swapchain_image_views[i], NULL);
     }

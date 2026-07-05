@@ -98,8 +98,7 @@ VkDevice create_logical_device(VkInstance instance, VkPhysicalDevice physical_de
         .pNext = &enabled_vk12_features,
         .synchronization2 = true,
         .dynamicRendering = true};
-    VkPhysicalDeviceFeatures enabled_vk10_features = {.samplerAnisotropy =
-                                                          VK_TRUE};
+    VkPhysicalDeviceFeatures enabled_vk10_features = {.samplerAnisotropy = VK_TRUE};
 
     VkDeviceCreateInfo device_ci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -325,4 +324,46 @@ VkCommandBuffer allocate_command_buffer(VkDevice device, VkCommandPool command_p
         fatal("Failed to allocate command buffers.");
     }
     return cb;
+}
+
+int get_format_pixel_size(VkFormat format) {
+    int size;
+    switch (format) {
+        case VK_FORMAT_B8G8R8A8_UNORM:
+        case VK_FORMAT_D32_SFLOAT:
+            size = 4;
+            break;
+        default:
+            fatal("get_format_pixel_size: unknown format");
+    }
+
+    return size;
+}
+
+VmaAllocatedBuffer allocate_buffer(VmaAllocator vma, VkDevice device,
+        VkBufferUsageFlags usage, VmaAllocationCreateFlags flags, size_t size)
+{
+    VmaAllocatedBuffer buf;
+    VkBufferCreateInfo buf_ci = {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = usage,
+    };
+    VmaAllocationCreateInfo buf_alloc_ci = {
+        .usage = VMA_MEMORY_USAGE_AUTO,
+        .flags = flags,
+    };
+    vmaCreateBuffer(vma, &buf_ci, &buf_alloc_ci, &buf.buffer, &buf.alloc, &buf.alloc_info);
+
+    if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+        VkBufferDeviceAddressInfo buf_addr_info = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+            .buffer = buf.buffer
+        };
+        buf.device_address = vkGetBufferDeviceAddress(device, &buf_addr_info);
+    } else {
+        buf.device_address = 0;
+    }
+
+    return buf;
 }

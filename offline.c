@@ -107,30 +107,10 @@ void save_texture(
             aspect_mask, initial_stage, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
     );
 
-    int pixel_size;
-    switch (format) {
-        case VK_FORMAT_B8G8R8A8_UNORM:
-        case VK_FORMAT_D32_SFLOAT:
-            pixel_size = 4;
-            break;
-        default:
-            fatal("Can't handle output image format in save_texture.");
-    }
-
-    VkBufferCreateInfo dest_buf_ci = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = pixel_size * image_width * image_height,
-        .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-    };
-    VmaAllocationCreateInfo dest_buf_alloc_ci = {
-        .usage = VMA_MEMORY_USAGE_AUTO,
-        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT,
-    };
-    VkBuffer dest_buf;
-    VmaAllocation dest_buf_alloc;
-    VmaAllocationInfo dest_buf_ai;
-    vmaCreateBuffer(vma, &dest_buf_ci, &dest_buf_alloc_ci, &dest_buf, &dest_buf_alloc, &dest_buf_ai);
+    int pixel_size = get_format_pixel_size(format);
+    VmaAllocatedBuffer dest_buf = allocate_buffer(vma, device, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT, pixel_size * image_width * image_height);
 
     VkBufferImageCopy copy = {
         .bufferOffset = 0,
@@ -143,7 +123,7 @@ void save_texture(
         .imageOffset = {0, 0, 0},
         .imageExtent = {image_width, image_height, 1},
     };
-    vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dest_buf, 1, &copy);
+    vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dest_buf.buffer, 1, &copy);
 
     chk(vkEndCommandBuffer(cb));
     VkFence fence = create_fence(device);
@@ -161,7 +141,7 @@ void save_texture(
     chk(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
     vkDestroyFence(device, fence, NULL);
 
-    char* pixel_data = dest_buf_ai.pMappedData;
+    char* pixel_data = dest_buf.alloc_info.pMappedData;
 
     FILE* file = fopen(filename, "wb");
     if (!file) {
@@ -171,16 +151,11 @@ void save_texture(
     fwrite(pixel_data, pixel_size * image_width * image_height, 1, file);
 
     fclose(file);
-    vmaDestroyBuffer(vma, dest_buf, dest_buf_alloc);
+    vmaDestroyBuffer(vma, dest_buf.buffer, dest_buf.alloc);
 }
 
 int main() {
-    VkInstance instance;
-    VkPhysicalDevice physical_device;
-    VkDevice device;
     VkQueue queue;
-    uint32_t queue_fam;
-    VmaAllocator vma;
     VkImage color_image;
     VmaAllocation color_image_allocation;
     VkImageView color_image_view;
@@ -197,10 +172,7 @@ int main() {
     size_t vertex_count;
     uint32_t *indices;
     size_t index_count;
-    VmaAllocation vibuf_alloc;
-    VkBuffer vibuf;
     VmaAllocatedBuffer shader_data_buffer;
-    VkCommandPool command_pool;
     VkCommandBuffer cb;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
@@ -210,13 +182,13 @@ int main() {
     cam_pos[1] = 0.0f;
     cam_pos[2] = -6.0f;
 
-    instance = create_instance(0, NULL);
-    physical_device = choose_physical_device(instance);
-    queue_fam = choose_queue_family(instance, physical_device);
-    device = create_logical_device(instance, physical_device, queue_fam, 0, NULL);
+    VkInstance instance = create_instance(0, NULL);
+    VkPhysicalDevice physical_device = choose_physical_device(instance);
+    uint32_t queue_fam = choose_queue_family(instance, physical_device);
+    VkDevice device = create_logical_device(instance, physical_device, queue_fam, 0, NULL);
     vkGetDeviceQueue(device, queue_fam, 0, &queue);
-    vma = create_vma(physical_device, device, instance);
-    command_pool = create_command_pool(device, queue_fam);
+    VmaAllocator vma = create_vma(physical_device, device, instance);
+    VkCommandPool command_pool = create_command_pool(device, queue_fam);
 
     const int image_height = 1080;
     const int image_width = 1920;
@@ -313,46 +285,20 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
 
     VkDeviceSize vbuf_size = sizeof(Vertex) * vertex_count;
     VkDeviceSize ibuf_size = sizeof(uint32_t) * index_count;
-    VkBufferCreateInfo buffer_ci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                                    .size = ibuf_size + vbuf_size,
-                                    .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-                                             VK_BUFFER_USAGE_INDEX_BUFFER_BIT};
-    VmaAllocationCreateInfo buffer_alloc_ci = {
-        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                 VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-                 VMA_ALLOCATION_CREATE_MAPPED_BIT,
-        .usage = VMA_MEMORY_USAGE_AUTO};
-    VmaAllocationInfo vibuf_alloc_info = {0};
-    if (vmaCreateBuffer(vma, &buffer_ci, &buffer_alloc_ci, &vibuf,
-                        &vibuf_alloc, &vibuf_alloc_info) != VK_SUCCESS) {
-        fatal("Failed to create vertex / index buffer.");
-    }
-    memcpy(vibuf_alloc_info.pMappedData, vertices, vbuf_size);
-    memcpy((char *)vibuf_alloc_info.pMappedData + vbuf_size, indices,
+    VmaAllocatedBuffer vibuf = allocate_buffer(vma, device,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT, ibuf_size + vbuf_size);
+
+    memcpy(vibuf.alloc_info.pMappedData, vertices, vbuf_size);
+    memcpy((char *)vibuf.alloc_info.pMappedData + vbuf_size, indices,
            ibuf_size);
 
-    VkBufferCreateInfo ubuf_ci = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = sizeof(SceneUniforms),
-        .usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-    };
-    VmaAllocationCreateInfo ubuf_alloc_ci = {
-        .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                 VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-                 VMA_ALLOCATION_CREATE_MAPPED_BIT,
-        .usage = VMA_MEMORY_USAGE_AUTO,
-    };
-    if (vmaCreateBuffer(vma, &ubuf_ci, &ubuf_alloc_ci,
-                        &shader_data_buffer.buffer,
-                        &shader_data_buffer.alloc,
-                        &shader_data_buffer.alloc_info) != VK_SUCCESS) {
-        fatal("Failed to creates shader uniform buffer.");
-    }
-    VkBufferDeviceAddressInfo ubuf_addr_info = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-        .buffer = shader_data_buffer.buffer
-    };
-    shader_data_buffer.device_address = vkGetBufferDeviceAddress(device, &ubuf_addr_info);
+    shader_data_buffer = allocate_buffer(vma, device, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT, sizeof(SceneUniforms));
 
     cb = allocate_command_buffer(device, command_pool);
 
@@ -511,7 +457,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
             .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .clearValue = {.color = {{0.8f, 0.8f, 0.8f, 1.0f}}}
+            .clearValue = {.color = {{0.0f, 0.0f, 0.0f, 0.0f}}}
         },
         {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
@@ -551,8 +497,8 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdSetScissor(cb, 0, 1, &scissor);
     VkDeviceSize vOffset = 0;
-    vkCmdBindVertexBuffers(cb, 0, 1, &vibuf, &vOffset);
-    vkCmdBindIndexBuffer(cb, vibuf, vbuf_size, VK_INDEX_TYPE_UINT32);
+    vkCmdBindVertexBuffers(cb, 0, 1, &vibuf.buffer, &vOffset);
+    vkCmdBindIndexBuffer(cb, vibuf.buffer, vbuf_size, VK_INDEX_TYPE_UINT32);
     vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(PushConstants), &pc);
     vkCmdDrawIndexed(cb, index_count, 1, 0, 0, 0);
@@ -627,7 +573,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     vmaDestroyImage(vma, normal_image, normal_image_allocation);
 
     vkDestroyCommandPool(device, command_pool, NULL);
-    vmaDestroyBuffer(vma, vibuf, vibuf_alloc);
+    vmaDestroyBuffer(vma, vibuf.buffer, vibuf.alloc);
     vmaDestroyAllocator(vma);
     vkDestroyDevice(device, NULL);
     vkDestroyInstance(instance, NULL);
