@@ -11,6 +11,7 @@ struct VSOutput {
 };
 
 struct FSOutput {
+    [[vk::location(0)]] float4 color : SV_Target0;
 };
 
 [shader("vertex")]
@@ -25,4 +26,7 @@ VSOutput vertex_main(uint vertexIndex: SV_VertexID) {
 
 [shader("fragment")]
 FSOutput fragment_main(VSOutput input) {
+    FSOutput output;
+    output.color = float4(0, 0, 0.9, 1.0);
+    return output;
 }

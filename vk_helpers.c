@@ -86,8 +86,12 @@ VkDevice create_logical_device(VkInstance instance, VkPhysicalDevice physical_de
         .queueFamilyIndex = queue_family,
         .queueCount = 1,
         .pQueuePriorities = &queue_fam_priority};
+     VkPhysicalDeviceVulkan11Features enabled_vk11_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+        .shaderDrawParameters = true};
     VkPhysicalDeviceVulkan12Features enabled_vk12_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+        .pNext = &enabled_vk11_features,
         .descriptorIndexing = true,
         .shaderSampledImageArrayNonUniformIndexing = true,
         .descriptorBindingVariableDescriptorCount = true,
@@ -326,18 +330,45 @@ VkCommandBuffer allocate_command_buffer(VkDevice device, VkCommandPool command_p
     return cb;
 }
 
+VkCommandBuffer begin_command_buffer(VkDevice device, VkCommandPool command_pool, VkCommandBufferUsageFlags flags) {
+    VkCommandBuffer cb = allocate_command_buffer(device, command_pool);
+    chk(vkResetCommandBuffer(cb, 0));
+    VkCommandBufferBeginInfo cb_bi = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = flags};
+    chk(vkBeginCommandBuffer(cb, &cb_bi));
+    return cb;
+}
+
+void end_one_time_command_buffer(VkDevice device, VkCommandBuffer cb, VkQueue queue) {
+    chk(vkEndCommandBuffer(cb));
+    VkFence fence = create_fence(device);
+    VkSubmitInfo submit_info = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = NULL,
+        .pWaitDstStageMask = NULL,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cb,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = NULL,
+    };
+    chk(vkQueueSubmit(queue, 1, &submit_info, fence));
+    chk(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
+    vkDestroyFence(device, fence, NULL);
+}
+
 int get_format_pixel_size(VkFormat format) {
-    int size;
     switch (format) {
         case VK_FORMAT_B8G8R8A8_UNORM:
         case VK_FORMAT_D32_SFLOAT:
-            size = 4;
-            break;
+            return 4;
+        case VK_FORMAT_R16G16B16_SFLOAT:
+            return 6;
         default:
             fatal("get_format_pixel_size: unknown format");
+            return 0;
     }
-
-    return size;
 }
 
 VmaAllocatedBuffer allocate_buffer(VmaAllocator vma, VkDevice device,

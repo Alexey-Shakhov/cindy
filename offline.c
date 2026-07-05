@@ -27,6 +27,7 @@ typedef struct PushConstants {
 } PushConstants;
 
 const VkFormat COLOR_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_UNORM;
+const VkFormat NORMAL_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_UNORM;
 
 VkImage create_depth_attachment_with_view(
         VkPhysicalDevice physical_device,
@@ -74,7 +75,7 @@ VkImage create_normal_attachment_with_view(
         int width,
         int height)
 {
-    VkFormat format = COLOR_IMAGE_FORMAT;
+    VkFormat format = NORMAL_IMAGE_FORMAT;
     *p_format = format;
     VkImage normal_image = create_image(vma, p_allocation, format,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
@@ -96,12 +97,7 @@ void save_texture(
     int image_height,
     const char* filename
 ) {
-    VkCommandBuffer cb = allocate_command_buffer(device, command_pool);
-    chk(vkResetCommandBuffer(cb, 0));
-    VkCommandBufferBeginInfo cb_bi = {
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
-    chk(vkBeginCommandBuffer(cb, &cb_bi));
+    VkCommandBuffer cb = begin_command_buffer(device, command_pool, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     transition_image_layout(
             cb, image, image_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             aspect_mask, initial_stage, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
@@ -125,27 +121,13 @@ void save_texture(
     };
     vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dest_buf.buffer, 1, &copy);
 
-    chk(vkEndCommandBuffer(cb));
-    VkFence fence = create_fence(device);
-    VkSubmitInfo submit_info = {
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .waitSemaphoreCount = 0,
-        .pWaitSemaphores = NULL,
-        .pWaitDstStageMask = NULL,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &cb,
-        .signalSemaphoreCount = 0,
-        .pSignalSemaphores = NULL,
-    };
-    chk(vkQueueSubmit(queue, 1, &submit_info, fence));
-    chk(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
-    vkDestroyFence(device, fence, NULL);
+    end_one_time_command_buffer(device, cb, queue);
 
     char* pixel_data = dest_buf.alloc_info.pMappedData;
 
     FILE* file = fopen(filename, "wb");
     if (!file) {
-        fatal("Failed to open color image for writing.");
+        fatal("Failed to open image for writing.");
     }
 
     fwrite(pixel_data, pixel_size * image_width * image_height, 1, file);
