@@ -1,14 +1,42 @@
-typedef struct Texture {
-    VmaAllocation alloc;
+typedef struct VulkanGlobals {
+    VkInstance instance;
+    VkPhysicalDevice physical_device;
+    VkDevice device;
+    VkQueue queue;
+    uint32_t queue_fam;
+    VmaAllocator vma;
+    VkCommandPool command_pool;
+} VulkanGlobals;
+
+VulkanGlobals vkg;
+
+typedef struct Image {
     VkImage image;
+    VmaAllocation alloc;
     VkImageView view;
+    VkFormat format;
+} Image;
+
+void destroy_image(Image* img) {
+    vkDestroyImageView(vkg.device, img->view, NULL);
+    vmaDestroyImage(vkg.vma, img->image, img->alloc);
+}
+
+typedef struct Texture {
+    Image img;
     VkSampler sampler;
+    VkDescriptorImageInfo desc_info;
 } Texture;
 
+void destroy_texture(Texture* tex) {
+    destroy_image(&tex->img);
+    vkDestroySampler(vkg.device, tex->sampler, NULL);
+}
+
 typedef struct VmaAllocatedBuffer {
+    VkBuffer buffer;
     VmaAllocation alloc;
     VmaAllocationInfo alloc_info;
-    VkBuffer buffer;
     VkDeviceAddress device_address;
 } VmaAllocatedBuffer;
 
@@ -36,7 +64,8 @@ VkInstance create_instance(uint32_t extension_count, const char* const * extensi
     return instance;
 }
 
-VkPhysicalDevice choose_physical_device(VkInstance instance) {
+VkPhysicalDevice choose_physical_device() {
+    VkInstance instance = vkg.instance;
     uint32_t dev_count;
     vkEnumeratePhysicalDevices(instance, &dev_count, NULL);
     VkPhysicalDevice *devices = malloc(sizeof(VkPhysicalDevice) * dev_count);
@@ -58,7 +87,10 @@ VkPhysicalDevice choose_physical_device(VkInstance instance) {
     return chosen_dev;
 }
 
-uint32_t choose_queue_family(VkInstance instance, VkPhysicalDevice physical_device) {
+uint32_t choose_queue_family() {
+    VkInstance instance = vkg.instance;
+    VkPhysicalDevice physical_device = vkg.physical_device;
+
     uint32_t queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
                                              NULL);
@@ -78,8 +110,11 @@ uint32_t choose_queue_family(VkInstance instance, VkPhysicalDevice physical_devi
     return chosen_queue_fam;
 }
 
-VkDevice create_logical_device(VkInstance instance, VkPhysicalDevice physical_device, uint32_t queue_family,
-        uint32_t extension_count, const char* const * extensions) {
+VkDevice create_logical_device(uint32_t extension_count, const char* const * extensions) {
+    VkInstance instance = vkg.instance;
+    VkPhysicalDevice physical_device = vkg.physical_device;
+    uint32_t queue_family = vkg.queue_fam;
+
     const float queue_fam_priority = 1.0f;
     VkDeviceQueueCreateInfo queue_ci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -121,12 +156,12 @@ VkDevice create_logical_device(VkInstance instance, VkPhysicalDevice physical_de
     return device;
 }
 
-VmaAllocator create_vma(VkPhysicalDevice physical_device, VkDevice device, VkInstance instance) {
+VmaAllocator create_vma() {
     VmaAllocatorCreateInfo allocator_ci = {
         .flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
-        .physicalDevice = physical_device,
-        .device = device,
-        .instance = instance,
+        .physicalDevice = vkg.physical_device,
+        .device = vkg.device,
+        .instance = vkg.instance,
         .vulkanApiVersion = VK_API_VERSION_1_3,
     };
     VmaAllocator vma;
@@ -136,8 +171,7 @@ VmaAllocator create_vma(VkPhysicalDevice physical_device, VkDevice device, VkIns
     return vma;
 }
 
-VkImage create_image(
-        VmaAllocator vma,
+VkImage create_vkimage(
         VmaAllocation* p_allocation,
         VkFormat format,
         VkImageUsageFlags usage,
@@ -167,7 +201,7 @@ VkImage create_image(
         .flags = flags,
         .usage = VMA_MEMORY_USAGE_AUTO};
     VkImage image;
-    if (vmaCreateImage(vma, &image_ci, &alloc_ci,
+    if (vmaCreateImage(vkg.vma, &image_ci, &alloc_ci,
                        &image, p_allocation,
                        NULL) != VK_SUCCESS) {
         fatal("Failed to create image.");
@@ -176,7 +210,7 @@ VkImage create_image(
     return image;
 }
 
-VkImageView create_image_view(VkDevice device, VkImage image, VkFormat format, VkImageAspectFlags aspect_mask) {
+VkImageView create_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspect_mask) {
     VkImageViewCreateInfo view_ci = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = image,
@@ -186,24 +220,43 @@ VkImageView create_image_view(VkDevice device, VkImage image, VkFormat format, V
                              .levelCount = 1,
                              .layerCount = 1}};
     VkImageView image_view;
-    if (vkCreateImageView(device, &view_ci, NULL, &image_view) != VK_SUCCESS) {
+    if (vkCreateImageView(vkg.device, &view_ci, NULL, &image_view) != VK_SUCCESS) {
         fatal("Failed to create image view.");
     }
     return image_view;
 }
 
-VkCommandPool create_command_pool(VkDevice device, uint32_t queue_fam) {
+VkCommandPool create_command_pool() {
     VkCommandPoolCreateInfo command_pool_ci = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = queue_fam,
+        .queueFamilyIndex = vkg.queue_fam,
     };
     VkCommandPool command_pool;
-    if (vkCreateCommandPool(device, &command_pool_ci, NULL,
+    if (vkCreateCommandPool(vkg.device, &command_pool_ci, NULL,
                             &command_pool) != VK_SUCCESS) {
         fatal("Failed to create command pool.");
     }
     return command_pool;
+}
+
+void vkg_init(uint32_t dev_ext_count, const char** dev_extensions,
+        uint32_t inst_ext_count, const char** instance_extensions)
+{
+    vkg.instance = create_instance(inst_ext_count, instance_extensions);
+    vkg.physical_device = choose_physical_device();
+    vkg.queue_fam = choose_queue_family();
+    vkg.device = create_logical_device(dev_ext_count, dev_extensions);
+    vkGetDeviceQueue(vkg.device, vkg.queue_fam, 0, &vkg.queue);
+    vkg.vma = create_vma();
+    vkg.command_pool = create_command_pool();
+}
+
+void vkg_shutdown() {
+    vkDestroyCommandPool(vkg.device, vkg.command_pool, NULL);
+    vmaDestroyAllocator(vkg.vma);
+    vkDestroyDevice(vkg.device, NULL);
+    vkDestroyInstance(vkg.instance, NULL);
 }
 
 // Copied and adapted from Sascha Willems' Vulkan Examples
@@ -308,30 +361,31 @@ VkImageCopy create_image_copy(VkImageAspectFlags aspect_mask, uint32_t width, ui
     return copy;
 }
 
-VkFence create_fence(VkDevice device) {
+VkFence create_fence(bool signaled) {
     VkFence fence;
     VkFenceCreateInfo fence_ci = {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .flags = signaled ? VK_FENCE_CREATE_SIGNALED_BIT : 0,
     };
-    chk(vkCreateFence(device, &fence_ci, NULL, &fence));
+    chk(vkCreateFence(vkg.device, &fence_ci, NULL, &fence));
     return fence;
 }
 
-VkCommandBuffer allocate_command_buffer(VkDevice device, VkCommandPool command_pool) {
+VkCommandBuffer allocate_command_buffer() {
     VkCommandBufferAllocateInfo cb_alloc_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = command_pool,
+        .commandPool = vkg.command_pool,
         .commandBufferCount = 1,
     };
     VkCommandBuffer cb;
-    if (vkAllocateCommandBuffers(device, &cb_alloc_info, &cb) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(vkg.device, &cb_alloc_info, &cb) != VK_SUCCESS) {
         fatal("Failed to allocate command buffers.");
     }
     return cb;
 }
 
-VkCommandBuffer begin_command_buffer(VkDevice device, VkCommandPool command_pool, VkCommandBufferUsageFlags flags) {
-    VkCommandBuffer cb = allocate_command_buffer(device, command_pool);
+VkCommandBuffer begin_command_buffer(VkCommandBufferUsageFlags flags) {
+    VkCommandBuffer cb = allocate_command_buffer();
     chk(vkResetCommandBuffer(cb, 0));
     VkCommandBufferBeginInfo cb_bi = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -340,9 +394,9 @@ VkCommandBuffer begin_command_buffer(VkDevice device, VkCommandPool command_pool
     return cb;
 }
 
-void end_one_time_command_buffer(VkDevice device, VkCommandBuffer cb, VkQueue queue) {
+void end_one_time_command_buffer(VkCommandBuffer cb) {
     chk(vkEndCommandBuffer(cb));
-    VkFence fence = create_fence(device);
+    VkFence fence = create_fence(false);
     VkSubmitInfo submit_info = {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .waitSemaphoreCount = 0,
@@ -353,9 +407,9 @@ void end_one_time_command_buffer(VkDevice device, VkCommandBuffer cb, VkQueue qu
         .signalSemaphoreCount = 0,
         .pSignalSemaphores = NULL,
     };
-    chk(vkQueueSubmit(queue, 1, &submit_info, fence));
-    chk(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
-    vkDestroyFence(device, fence, NULL);
+    chk(vkQueueSubmit(vkg.queue, 1, &submit_info, fence));
+    chk(vkWaitForFences(vkg.device, 1, &fence, VK_TRUE, UINT64_MAX));
+    vkDestroyFence(vkg.device, fence, NULL);
 }
 
 int get_format_pixel_size(VkFormat format) {
@@ -371,8 +425,7 @@ int get_format_pixel_size(VkFormat format) {
     }
 }
 
-VmaAllocatedBuffer allocate_buffer(VmaAllocator vma, VkDevice device,
-        VkBufferUsageFlags usage, VmaAllocationCreateFlags flags, size_t size)
+VmaAllocatedBuffer allocate_buffer(VkBufferUsageFlags usage, VmaAllocationCreateFlags flags, size_t size)
 {
     VmaAllocatedBuffer buf;
     VkBufferCreateInfo buf_ci = {
@@ -384,17 +437,53 @@ VmaAllocatedBuffer allocate_buffer(VmaAllocator vma, VkDevice device,
         .usage = VMA_MEMORY_USAGE_AUTO,
         .flags = flags,
     };
-    vmaCreateBuffer(vma, &buf_ci, &buf_alloc_ci, &buf.buffer, &buf.alloc, &buf.alloc_info);
+    vmaCreateBuffer(vkg.vma, &buf_ci, &buf_alloc_ci, &buf.buffer, &buf.alloc, &buf.alloc_info);
 
     if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
         VkBufferDeviceAddressInfo buf_addr_info = {
             .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
             .buffer = buf.buffer
         };
-        buf.device_address = vkGetBufferDeviceAddress(device, &buf_addr_info);
+        buf.device_address = vkGetBufferDeviceAddress(vkg.device, &buf_addr_info);
     } else {
         buf.device_address = 0;
     }
 
     return buf;
 }
+
+const VkFormat DEPTH_MAP_FORMAT = VK_FORMAT_D32_SFLOAT;
+Image create_depth_attachment_with_view(
+        int width,
+        int height)
+{
+    /*
+    #define DEPTH_FORMAT_COUNT 2
+    VkFormat depth_format_list[DEPTH_FORMAT_COUNT] = {
+        VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
+    VkFormat depth_format = VK_FORMAT_UNDEFINED;
+    for (int i = 0; i < DEPTH_FORMAT_COUNT; i++) {
+        VkFormatProperties2 format_properties = {
+            .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
+        vkGetPhysicalDeviceFormatProperties2(physical_device, depth_format_list[i],
+                                             &format_properties);
+        if (format_properties.formatProperties.optimalTilingFeatures &
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            depth_format = depth_format_list[i];
+            break;
+        }
+    }
+    if (depth_format == VK_FORMAT_UNDEFINED) {
+        fatal("Failed to find a suitable depth format.");
+    }
+    */
+    Image depth_att;
+    depth_att.format = DEPTH_MAP_FORMAT;
+    // TODO specify usage for offline and in-game attachments properly
+    depth_att.image = create_vkimage(&depth_att.alloc, depth_att.format,
+            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            width, height, false);
+    depth_att.view = create_image_view(depth_att.image, depth_att.format, VK_IMAGE_ASPECT_DEPTH_BIT);
+    return depth_att;
+}
+

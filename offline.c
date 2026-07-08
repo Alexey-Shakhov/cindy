@@ -29,65 +29,18 @@ typedef struct PushConstants {
 const VkFormat COLOR_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_UNORM;
 const VkFormat NORMAL_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_UNORM;
 
-VkImage create_depth_attachment_with_view(
-        VkPhysicalDevice physical_device,
-        VkDevice device,
-        VmaAllocator vma,
-        VmaAllocation* p_allocation,
-        VkImageView* p_image_view,
-        VkFormat* p_format,
-        int width,
-        int height)
+Image create_normal_attachment_with_view(int width, int height)
 {
-    #define DEPTH_FORMAT_COUNT 1
-    VkFormat depth_format_list[DEPTH_FORMAT_COUNT] = {
-        VK_FORMAT_D32_SFLOAT
-    };
-    VkFormat depth_format = VK_FORMAT_UNDEFINED;
-    for (int i = 0; i < DEPTH_FORMAT_COUNT; i++) {
-        VkFormatProperties2 format_properties = {
-            .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
-        vkGetPhysicalDeviceFormatProperties2(physical_device, depth_format_list[i],
-                                             &format_properties);
-        if (format_properties.formatProperties.optimalTilingFeatures &
-            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            depth_format = depth_format_list[i];
-            break;
-        }
-    }
-    if (depth_format == VK_FORMAT_UNDEFINED) {
-        fatal("Failed to find a suitable depth format.");
-    }
-    *p_format = depth_format;
-    VkImage depth_image = create_image(vma, p_allocation, depth_format,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
-    *p_image_view = create_image_view(device, depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT);
-    return depth_image;
-}
-
-VkImage create_normal_attachment_with_view(
-        VkPhysicalDevice physical_device,
-        VkDevice device,
-        VmaAllocator vma,
-        VmaAllocation* p_allocation,
-        VkImageView* p_image_view,
-        VkFormat* p_format,
-        int width,
-        int height)
-{
+    Image normal_image;
     VkFormat format = NORMAL_IMAGE_FORMAT;
-    *p_format = format;
-    VkImage normal_image = create_image(vma, p_allocation, format,
+    normal_image.format = format;
+    normal_image.image = create_vkimage(&normal_image.alloc, format,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
-    *p_image_view = create_image_view(device, normal_image, format, VK_IMAGE_ASPECT_COLOR_BIT);
+    normal_image.view = create_image_view(normal_image.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
     return normal_image;
 }
 
 void save_texture(
-    VkDevice device,
-    VkQueue queue,
-    VmaAllocator vma,
-    VkCommandPool command_pool,
     VkImage image,
     VkFormat format,
     VkImageLayout image_layout,
@@ -97,14 +50,14 @@ void save_texture(
     int image_height,
     const char* filename
 ) {
-    VkCommandBuffer cb = begin_command_buffer(device, command_pool, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    VkCommandBuffer cb = begin_command_buffer(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     transition_image_layout(
             cb, image, image_layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             aspect_mask, initial_stage, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT
     );
 
     int pixel_size = get_format_pixel_size(format);
-    VmaAllocatedBuffer dest_buf = allocate_buffer(vma, device, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+    VmaAllocatedBuffer dest_buf = allocate_buffer(VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT, pixel_size * image_width * image_height);
 
@@ -121,7 +74,7 @@ void save_texture(
     };
     vkCmdCopyImageToBuffer(cb, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dest_buf.buffer, 1, &copy);
 
-    end_one_time_command_buffer(device, cb, queue);
+    end_one_time_command_buffer(cb);
 
     char* pixel_data = dest_buf.alloc_info.pMappedData;
 
@@ -133,23 +86,12 @@ void save_texture(
     fwrite(pixel_data, pixel_size * image_width * image_height, 1, file);
 
     fclose(file);
-    vmaDestroyBuffer(vma, dest_buf.buffer, dest_buf.alloc);
+    vmaDestroyBuffer(vkg.vma, dest_buf.buffer, dest_buf.alloc);
 }
 
 int main() {
-    VkQueue queue;
-    VkImage color_image;
-    VmaAllocation color_image_allocation;
-    VkImageView color_image_view;
-    VkFormat color_format;
-    VkImage depth_image;
-    VmaAllocation depth_image_allocation;
-    VkImageView depth_image_view;
-    VkFormat depth_format;
-    VkImage normal_image;
-    VmaAllocation normal_image_allocation;
-    VkImageView normal_image_view;
-    VkFormat normal_format;
+    Image color_att;
+
     Vertex *vertices;
     size_t vertex_count;
     uint32_t *indices;
@@ -164,41 +106,17 @@ int main() {
     cam_pos[1] = 0.0f;
     cam_pos[2] = -6.0f;
 
-    VkInstance instance = create_instance(0, NULL);
-    VkPhysicalDevice physical_device = choose_physical_device(instance);
-    uint32_t queue_fam = choose_queue_family(instance, physical_device);
-    VkDevice device = create_logical_device(instance, physical_device, queue_fam, 0, NULL);
-    vkGetDeviceQueue(device, queue_fam, 0, &queue);
-    VmaAllocator vma = create_vma(physical_device, device, instance);
-    VkCommandPool command_pool = create_command_pool(device, queue_fam);
+    vkg_init(0, NULL, 0, NULL);
 
     const int image_height = 1080;
     const int image_width = 1920;
 
-    color_image = create_image(vma, &color_image_allocation, COLOR_IMAGE_FORMAT,
+    color_att.image = create_vkimage(&color_att.alloc, COLOR_IMAGE_FORMAT,
             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, image_width, image_height, false);
-    color_image_view = create_image_view(device, color_image, COLOR_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+    color_att.view = create_image_view(color_att.image, COLOR_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-    depth_image = create_depth_attachment_with_view(
-            physical_device,
-            device,
-            vma,
-            &depth_image_allocation,
-            &depth_image_view,
-            &depth_format,
-            image_width,
-            image_height
-    );
-    normal_image = create_normal_attachment_with_view(
-            physical_device,
-            device,
-            vma,
-            &normal_image_allocation,
-            &normal_image_view,
-            &normal_format,
-            image_width,
-            image_height
-    );
+    Image depth_att = create_depth_attachment_with_view(image_width,image_height);
+    Image normal_att = create_normal_attachment_with_view(image_width, image_height);
 
  float positions[24] = { 1.000000, -1.000000, -1.000000,
  1.000000, -1.000000, 1.000000,
@@ -267,7 +185,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
 
     VkDeviceSize vbuf_size = sizeof(Vertex) * vertex_count;
     VkDeviceSize ibuf_size = sizeof(uint32_t) * index_count;
-    VmaAllocatedBuffer vibuf = allocate_buffer(vma, device,
+    VmaAllocatedBuffer vibuf = allocate_buffer(
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
@@ -277,12 +195,12 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     memcpy((char *)vibuf.alloc_info.pMappedData + vbuf_size, indices,
            ibuf_size);
 
-    shader_data_buffer = allocate_buffer(vma, device, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+    shader_data_buffer = allocate_buffer(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT, sizeof(SceneUniforms));
 
-    cb = allocate_command_buffer(device, command_pool);
+    cb = allocate_command_buffer();
 
     size_t code_size = 0;
     uint32_t* spirv;
@@ -295,7 +213,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         .pCode = spirv,
     };
     VkShaderModule shader_module;
-    chk(vkCreateShaderModule(device, &shader_module_ci, NULL, &shader_module));
+    chk(vkCreateShaderModule(vkg.device, &shader_module_ci, NULL, &shader_module));
 
     VkPushConstantRange push_constant_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT ,
@@ -307,7 +225,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         .pSetLayouts = NULL,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &push_constant_range};
-    chk(vkCreatePipelineLayout(device, &pipeline_layout_ci, NULL,
+    chk(vkCreatePipelineLayout(vkg.device, &pipeline_layout_ci, NULL,
                                &pipeline_layout));
     VkPipelineShaderStageCreateInfo shader_stages[2] = {
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -373,13 +291,13 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         .pAttachments = blend_attachment_states};
     VkFormat color_attachment_formats[2] = {
         COLOR_IMAGE_FORMAT,
-        normal_format
+        normal_att.format
     };
     VkPipelineRenderingCreateInfo rendering_ci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
         .colorAttachmentCount = 2,
         .pColorAttachmentFormats = color_attachment_formats,
-        .depthAttachmentFormat = depth_format};
+        .depthAttachmentFormat = depth_att.format};
     VkGraphicsPipelineCreateInfo pipeline_ci = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &rendering_ci,
@@ -394,7 +312,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         .pColorBlendState = &color_blend_state,
         .pDynamicState = &dynamic_state,
         .layout = pipeline_layout};
-    chk(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &pipeline));
+    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &pipeline));
 
     SceneUniforms uniforms;
     glm_perspective(glm_rad(45.0f), (float)image_width / (float)image_height,
@@ -419,15 +337,15 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     chk(vkBeginCommandBuffer(cb, &cb_bi));
 
     transition_image_layout(
-            cb, color_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            cb, color_att.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
     );
     transition_image_layout(
-            cb, normal_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            cb, normal_att.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_ASPECT_COLOR_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
     );
     transition_image_layout(
-            cb, depth_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            cb, depth_att.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             VK_IMAGE_ASPECT_DEPTH_BIT, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT
     );
@@ -435,7 +353,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     VkRenderingAttachmentInfo color_attachment_infos[2] = {
         {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = color_image_view,
+            .imageView = color_att.view,
             .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -443,7 +361,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         },
         {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = normal_image_view,
+            .imageView = normal_att.view,
             .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -452,7 +370,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     };
     VkRenderingAttachmentInfo depthAttachmentInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = depth_image_view,
+        .imageView = depth_att.view,
         .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -487,7 +405,7 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     vkCmdEndRendering(cb);
 
     chk(vkEndCommandBuffer(cb));
-    VkFence fence = create_fence(device);
+    VkFence fence = create_fence(false);
     VkSubmitInfo submit_info = {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .waitSemaphoreCount = 0,
@@ -498,16 +416,12 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         .signalSemaphoreCount = 0,
         .pSignalSemaphores = NULL,
     };
-    chk(vkQueueSubmit(queue, 1, &submit_info, fence));
-    chk(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
-    vkDestroyFence(device, fence, NULL);
+    chk(vkQueueSubmit(vkg.queue, 1, &submit_info, fence));
+    chk(vkWaitForFences(vkg.device, 1, &fence, VK_TRUE, UINT64_MAX));
+    vkDestroyFence(vkg.device, fence, NULL);
 
     save_texture(
-            device,
-            queue,
-            vma,
-            command_pool,
-            color_image,
+            color_att.image,
             COLOR_IMAGE_FORMAT,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_ASPECT_COLOR_BIT,
@@ -515,12 +429,8 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
             image_width, image_height, "offline-output/color.bin"
     );
     save_texture(
-            device,
-            queue,
-            vma,
-            command_pool,
-            normal_image,
-            normal_format,
+            normal_att.image,
+            normal_att.format,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_ASPECT_COLOR_BIT,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -528,37 +438,28 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     );
 
     save_texture(
-            device,
-            queue,
-            vma,
-            command_pool,
-            depth_image,
-            depth_format,
+            depth_att.image,
+            depth_att.format,
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
             VK_IMAGE_ASPECT_DEPTH_BIT,
             VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
             image_width, image_height, "offline-output/depth.bin"
     );
 
-    chk(vkDeviceWaitIdle(device));
+    chk(vkDeviceWaitIdle(vkg.device));
 
-    vkDestroyPipeline(device, pipeline, NULL);
-    vkDestroyPipelineLayout(device, pipeline_layout, NULL);
-    vkDestroyShaderModule(device, shader_module, NULL);
-    vmaDestroyBuffer(vma, shader_data_buffer.buffer, shader_data_buffer.alloc);
+    vkDestroyPipeline(vkg.device, pipeline, NULL);
+    vkDestroyPipelineLayout(vkg.device, pipeline_layout, NULL);
+    vkDestroyShaderModule(vkg.device, shader_module, NULL);
+    vmaDestroyBuffer(vkg.vma, shader_data_buffer.buffer, shader_data_buffer.alloc);
 
-    vmaDestroyImage(vma, color_image, color_image_allocation);
-    vkDestroyImageView(device, color_image_view, NULL);
-    vkDestroyImageView(device, depth_image_view, NULL);
-    vmaDestroyImage(vma, depth_image, depth_image_allocation);
-    vkDestroyImageView(device, normal_image_view, NULL);
-    vmaDestroyImage(vma, normal_image, normal_image_allocation);
+    destroy_image(&color_att);
+    destroy_image(&depth_att);
+    destroy_image(&normal_att);
 
-    vkDestroyCommandPool(device, command_pool, NULL);
-    vmaDestroyBuffer(vma, vibuf.buffer, vibuf.alloc);
-    vmaDestroyAllocator(vma);
-    vkDestroyDevice(device, NULL);
-    vkDestroyInstance(instance, NULL);
+    vmaDestroyBuffer(vkg.vma, vibuf.buffer, vibuf.alloc);
+
+    vkg_shutdown();
 
     return 0;
 }

@@ -16,20 +16,13 @@ const VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_SRGB;
 
 const VkFormat COLOR_MAP_FORMAT = VK_FORMAT_B8G8R8A8_UNORM;
 const VkFormat NORMAL_MAP_FORMAT = VK_FORMAT_B8G8R8A8_UNORM;
-const VkFormat DEPTH_MAP_FORMAT = VK_FORMAT_D32_SFLOAT;
 
 #define MAP_WIDTH 1920
 #define MAP_HEIGHT 1080
 
 struct State {
     GLFWwindow *window;
-    VkInstance instance;
-    VkPhysicalDevice physical_device;
-    VkDevice device;
-    VkQueue queue;
-    uint32_t queue_fam;
     VkSurfaceKHR surface;
-    VmaAllocator vma;
 
     int window_w;
     int window_h;
@@ -40,51 +33,24 @@ struct State {
     VkImage* swapchain_images;
     VkImageView *swapchain_image_views;
 
-    VkImage depth_att;
-    VmaAllocation depth_att_allocation;
-    VkImageView depth_att_view;
-    VkFormat depth_att_format;
+    Image depth_att;
 
-    VkImage color_map;
-    VmaAllocation color_map_allocation;
-    VkImageView color_map_view;
-    VkFormat color_map_format;
-    VkSampler color_map_sampler;
-    VkDescriptorImageInfo color_map_desc_info;
-
-    VkImage depth_map;
-    VmaAllocation depth_map_allocation;
-    VkImageView depth_map_view;
-    VkFormat depth_map_format;
-    VkSampler depth_map_sampler;
-    VkDescriptorImageInfo depth_map_desc_info;
-
-    VkImage normal_map;
-    VmaAllocation normal_map_allocation;
-    VkImageView normal_map_view;
-    VkFormat normal_map_format;
-    VkSampler normal_map_sampler;
-    VkDescriptorImageInfo normal_map_desc_info;
+    Texture color_map;
+    Texture depth_map;
+    Texture normal_map;
 
     VkSemaphore image_acquired_semaphores[MAX_FRAMES_IN_FLIGHT];
     VkFence fences[MAX_FRAMES_IN_FLIGHT];
     VkSemaphore *render_complete_semaphores;
     uint32_t frame_index;
-
-    VkCommandPool command_pool;
     VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
-
     VkDescriptorPool descriptor_pool;
     VkDescriptorSetLayout desc_set_layout;
     VkDescriptorSet desc_set;
-
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
-
     uint32_t image_index;
-
     bool update_swapchain;
-
     vec3 cam_pos;
 } st = {0};
 
@@ -182,59 +148,23 @@ VkSwapchainKHR create_swapchain_with_views(
 
     *p_image_views = malloc(sizeof(VkImageView) * (*p_image_count));
     for (int i = 0; i < *p_image_count; i++) {
-        (*p_image_views)[i] = create_image_view(device, (*p_images)[i],
-                SWAPCHAIN_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
+        (*p_image_views)[i] = create_image_view((*p_images)[i], SWAPCHAIN_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 
     vkDestroySwapchainKHR(device, swapchain_ci.oldSwapchain, NULL);
     return swapchain;
 }
 
-VkImage create_depth_attachment_with_view(
-        VkPhysicalDevice physical_device,
-        VkDevice device,
-        VmaAllocator vma,
-        VmaAllocation* p_allocation,
-        VkImageView* p_image_view,
-        VkFormat* p_format,
-        int width,
-        int height)
+Texture load_world_tex_map(const char* filename, VkFormat format, VkImageAspectFlags aspect_mask, int width, int height)
 {
-    /*
-    #define DEPTH_FORMAT_COUNT 2
-    VkFormat depth_format_list[DEPTH_FORMAT_COUNT] = {
-        VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
-    VkFormat depth_format = VK_FORMAT_UNDEFINED;
-    for (int i = 0; i < DEPTH_FORMAT_COUNT; i++) {
-        VkFormatProperties2 format_properties = {
-            .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
-        vkGetPhysicalDeviceFormatProperties2(physical_device, depth_format_list[i],
-                                             &format_properties);
-        if (format_properties.formatProperties.optimalTilingFeatures &
-            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            depth_format = depth_format_list[i];
-            break;
-        }
-    }
-    if (depth_format == VK_FORMAT_UNDEFINED) {
-        fatal("Failed to find a suitable depth format.");
-    }
-    */
-    VkFormat depth_format = DEPTH_MAP_FORMAT;
-    *p_format = depth_format;
-    VkImage depth_image = create_image(vma, p_allocation, depth_format,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, width, height, false);
-    *p_image_view = create_image_view(device, depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT);
-    return depth_image;
-}
+    Texture tex;
+    Image* img = &tex.img;
 
-VkImage load_world_tex_map(VkImageView* p_view, VmaAllocation* p_alloc, VkSampler* p_sampler, VkDescriptorImageInfo* p_desc_info,
-        VkDevice device, VmaAllocator vma, VkCommandPool command_pool,
-        const char* filename, VkFormat format, VkImageAspectFlags aspect_mask, int width, int height)
-{
+    tex.img.format = format;
+
     int pixel_size = get_format_pixel_size(format);
     int buf_size = pixel_size * width * height;
-    VmaAllocatedBuffer staging_buf = allocate_buffer(vma, device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    VmaAllocatedBuffer staging_buf = allocate_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT, buf_size);
 
@@ -246,11 +176,11 @@ VkImage load_world_tex_map(VkImageView* p_view, VmaAllocation* p_alloc, VkSample
     fread(staging_buf_p, buf_size, 1, file);
     fclose(file);
 
-    VkImage image = create_image(vma, p_alloc, format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+    img->image = create_vkimage(&img->alloc, format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
             width, height, false);
 
-    VkCommandBuffer cb = begin_command_buffer(device, command_pool, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-    transition_image_layout(cb, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    VkCommandBuffer cb = begin_command_buffer(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    transition_image_layout(cb, img->image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             aspect_mask, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
     VkBufferImageCopy copy = {
         .bufferOffset = 0,
@@ -263,14 +193,14 @@ VkImage load_world_tex_map(VkImageView* p_view, VmaAllocation* p_alloc, VkSample
         .imageOffset = {0, 0, 0},
         .imageExtent = {width, height, 1},
     };
-    vkCmdCopyBufferToImage(cb, staging_buf.buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-    transition_image_layout(cb, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    vkCmdCopyBufferToImage(cb, staging_buf.buffer, img->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    transition_image_layout(cb, img->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             aspect_mask, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
-    end_one_time_command_buffer(st.device, cb, st.queue);
+    end_one_time_command_buffer(cb);
 
-    vmaDestroyBuffer(vma, staging_buf.buffer, staging_buf.alloc);
+    vmaDestroyBuffer(vkg.vma, staging_buf.buffer, staging_buf.alloc);
 
-    *p_view = create_image_view(device, image, format, aspect_mask);
+    img->view = create_image_view(img->image, format, aspect_mask);
 
     VkSamplerCreateInfo sampler_ci = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -280,14 +210,14 @@ VkImage load_world_tex_map(VkImageView* p_view, VmaAllocation* p_alloc, VkSample
         .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
         .anisotropyEnable = VK_FALSE,
     };
-    chk(vkCreateSampler(device, &sampler_ci, NULL, p_sampler));
-    *p_desc_info = (VkDescriptorImageInfo) {
-        .sampler = *p_sampler,
-        .imageView = *p_view,
+    chk(vkCreateSampler(vkg.device, &sampler_ci, NULL, &tex.sampler));
+    tex.desc_info = (VkDescriptorImageInfo) {
+        .sampler = tex.sampler,
+        .imageView = img->view,
         .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
     };
 
-    return image;
+    return tex;
 }
 
 int main() {
@@ -299,25 +229,18 @@ int main() {
     st.window = create_window();
     glfwGetWindowSize(st.window, &st.window_w, &st.window_h);
 
+    const char* dev_extensions[1] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
     uint32_t ext_count;
     const char** extensions = glfwGetRequiredInstanceExtensions(&ext_count);
-    st.instance = create_instance(ext_count, extensions);
+    vkg_init(1, dev_extensions, ext_count, extensions);
 
-    st.physical_device = choose_physical_device(st.instance);
-    st.queue_fam = choose_queue_family(st.instance, st.physical_device);
-
-    const char* dev_extensions[1] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-    st.device = create_logical_device(st.instance, st.physical_device, st.queue_fam, 1, dev_extensions);
-    vkGetDeviceQueue(st.device, st.queue_fam, 0, &st.queue);
-    st.vma = create_vma(st.physical_device, st.device, st.instance);
-
-    if (glfwCreateWindowSurface(st.instance, st.window, NULL, &st.surface) != VK_SUCCESS) {
+    if (glfwCreateWindowSurface(vkg.instance, st.window, NULL, &st.surface) != VK_SUCCESS) {
         fatal("Failed to create window surface.");
     }
 
     st.swapchain = create_swapchain_with_views(
-            st.physical_device,
-            st.device,
+            vkg.physical_device,
+            vkg.device,
             st.surface,
             st.window_w,
             st.window_h,
@@ -327,24 +250,16 @@ int main() {
             &st.swapchain_extent,
             VK_NULL_HANDLE
     );
-    st.command_pool = create_command_pool(st.device, st.queue_fam);
 
-    st.depth_att = create_depth_attachment_with_view(
-            st.physical_device, st.device, st.vma,
-            &st.depth_att_allocation, &st.depth_att_view,
-            &st.depth_att_format, st.window_w, st.window_h
-    );
+    st.depth_att = create_depth_attachment_with_view(st.window_w, st.window_h);
 
     VkSemaphoreCreateInfo semaphore_ci = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     VkFenceCreateInfo fence_ci = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
                                   .flags = VK_FENCE_CREATE_SIGNALED_BIT};
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateFence(st.device, &fence_ci, NULL, &st.fences[i]) !=
-            VK_SUCCESS) {
-            fatal("Failed to create fence.");
-        }
-        if (vkCreateSemaphore(st.device, &semaphore_ci, NULL,
+        st.fences[i] = create_fence(true);
+        if (vkCreateSemaphore(vkg.device, &semaphore_ci, NULL,
                               &st.image_acquired_semaphores[i]) != VK_SUCCESS) {
             fatal("Failed to create semaphore for image acquisition.");
         }
@@ -352,7 +267,7 @@ int main() {
 
     st.render_complete_semaphores = malloc(sizeof(VkSemaphore) * st.swapchain_image_count);
     for (int i = 0; i < st.swapchain_image_count; i++) {
-        if (vkCreateSemaphore(st.device, &semaphore_ci, NULL,
+        if (vkCreateSemaphore(vkg.device, &semaphore_ci, NULL,
                       &st.render_complete_semaphores[i]) != VK_SUCCESS) {
             fatal("Failed to create semaphore for rendering completion.");
         }
@@ -360,10 +275,10 @@ int main() {
 
     VkCommandBufferAllocateInfo cb_alloc_info = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = st.command_pool,
+        .commandPool = vkg.command_pool,
         .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
     };
-    if (vkAllocateCommandBuffers(st.device, &cb_alloc_info,
+    if (vkAllocateCommandBuffers(vkg.device, &cb_alloc_info,
                                  st.command_buffers) != VK_SUCCESS) {
         fatal("Failed to allocate command buffers.");
     }
@@ -379,7 +294,7 @@ int main() {
         .pCode = spirv,
     };
     VkShaderModule shader_module;
-    chk(vkCreateShaderModule(st.device, &shader_module_ci, NULL, &shader_module));
+    chk(vkCreateShaderModule(vkg.device, &shader_module_ci, NULL, &shader_module));
 
     VkDescriptorSetLayoutBinding bindings[3];
     for (int i=0; i < 3; i++) {
@@ -397,7 +312,7 @@ int main() {
         .bindingCount = 3,
         .pBindings = bindings,
     };
-    vkCreateDescriptorSetLayout(st.device, &desc_set_layout_ci, NULL, &st.desc_set_layout);
+    vkCreateDescriptorSetLayout(vkg.device, &desc_set_layout_ci, NULL, &st.desc_set_layout);
 
     VkPipelineLayoutCreateInfo pipeline_layout_ci = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -405,7 +320,7 @@ int main() {
         .pSetLayouts = &st.desc_set_layout,
         .pushConstantRangeCount = 0,
         .pPushConstantRanges = NULL};
-    chk(vkCreatePipelineLayout(st.device, &pipeline_layout_ci, NULL,
+    chk(vkCreatePipelineLayout(vkg.device, &pipeline_layout_ci, NULL,
                                &st.pipeline_layout));
     VkPipelineShaderStageCreateInfo shader_stages[2] = {
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -448,7 +363,7 @@ int main() {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
         .colorAttachmentCount = 1,
         .pColorAttachmentFormats = &color_attachment_format,
-        .depthAttachmentFormat = st.depth_att_format};
+        .depthAttachmentFormat = st.depth_att.format};
     VkPipelineDepthStencilStateCreateInfo depth_stencil_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
         .depthTestEnable = VK_TRUE,
@@ -475,7 +390,7 @@ int main() {
         .pDynamicState = &dynamic_state,
         .layout = st.pipeline_layout};
     chk(vkCreateGraphicsPipelines(
-                st.device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &st.pipeline));
+                vkg.device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &st.pipeline));
 
     VkDescriptorPoolSize pool_size = {
         .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -487,7 +402,7 @@ int main() {
         .poolSizeCount = 1,
         .pPoolSizes = &pool_size
     };
-	chk(vkCreateDescriptorPool(st.device, &desc_pool_ci, NULL, &st.descriptor_pool));
+	chk(vkCreateDescriptorPool(vkg.device, &desc_pool_ci, NULL, &st.descriptor_pool));
 
     VkDescriptorSetAllocateInfo desc_set_alloc = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -496,22 +411,19 @@ int main() {
         .descriptorSetCount = 1,
         .pSetLayouts = &st.desc_set_layout
     };
-	chk(vkAllocateDescriptorSets(st.device, &desc_set_alloc, &st.desc_set));
+	chk(vkAllocateDescriptorSets(vkg.device, &desc_set_alloc, &st.desc_set));
 
-    st.color_map = load_world_tex_map(&st.color_map_view, &st.color_map_allocation, &st.color_map_sampler,
-            &st.color_map_desc_info, st.device, st.vma, st.command_pool, "offline-output/color.bin", COLOR_MAP_FORMAT,
+    st.color_map = load_world_tex_map("offline-output/color.bin", COLOR_MAP_FORMAT,
             VK_IMAGE_ASPECT_COLOR_BIT, MAP_WIDTH, MAP_HEIGHT);
-    st.normal_map = load_world_tex_map(&st.normal_map_view, &st.normal_map_allocation, &st.normal_map_sampler,
-            &st.normal_map_desc_info, st.device, st.vma, st.command_pool, "offline-output/normal.bin", NORMAL_MAP_FORMAT,
+    st.normal_map = load_world_tex_map("offline-output/normal.bin", NORMAL_MAP_FORMAT,
             VK_IMAGE_ASPECT_COLOR_BIT, MAP_WIDTH, MAP_HEIGHT);
-    st.depth_map = load_world_tex_map(&st.depth_map_view, &st.depth_map_allocation, &st.depth_map_sampler,
-            &st.depth_map_desc_info, st.device, st.vma, st.command_pool, "offline-output/depth.bin", DEPTH_MAP_FORMAT,
+    st.depth_map = load_world_tex_map("offline-output/depth.bin", DEPTH_MAP_FORMAT,
             VK_IMAGE_ASPECT_DEPTH_BIT, MAP_WIDTH, MAP_HEIGHT);
 
     VkDescriptorImageInfo desc_infos[3] = {
-        st.color_map_desc_info,
-        st.normal_map_desc_info,
-        st.depth_map_desc_info,
+        st.color_map.desc_info,
+        st.normal_map.desc_info,
+        st.depth_map.desc_info,
     };
 	VkWriteDescriptorSet write_desc_set = {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -522,14 +434,14 @@ int main() {
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         .pImageInfo = desc_infos
     };
-	vkUpdateDescriptorSets(st.device, 1, &write_desc_set, 0, NULL);
+	vkUpdateDescriptorSets(vkg.device, 1, &write_desc_set, 0, NULL);
 
     while (!glfwWindowShouldClose(st.window)) {
         glfwPollEvents();
 
-        chk(vkWaitForFences(st.device, 1, &st.fences[st.frame_index], true, UINT64_MAX));
-        chk(vkResetFences(st.device, 1, &st.fences[st.frame_index]));
-        chkSwapchain(vkAcquireNextImageKHR(st.device, st.swapchain, UINT64_MAX,
+        chk(vkWaitForFences(vkg.device, 1, &st.fences[st.frame_index], true, UINT64_MAX));
+        chk(vkResetFences(vkg.device, 1, &st.fences[st.frame_index]));
+        chkSwapchain(vkAcquireNextImageKHR(vkg.device, st.swapchain, UINT64_MAX,
                                            st.image_acquired_semaphores[st.frame_index],
                                            VK_NULL_HANDLE, &st.image_index));
         VkCommandBuffer cb = st.command_buffers[st.frame_index];
@@ -561,7 +473,7 @@ int main() {
                 .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                 .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
                 .newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-                .image = st.depth_att,
+                .image = st.depth_att.image,
                 .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
                                   .levelCount = 1,
                                   .layerCount = 1}
@@ -584,7 +496,7 @@ int main() {
         };
         VkRenderingAttachmentInfo depth_attachment_info = {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = st.depth_att_view,
+            .imageView = st.depth_att.view,
             .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
@@ -645,7 +557,7 @@ int main() {
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &st.render_complete_semaphores[st.image_index],
         };
-        chk(vkQueueSubmit(st.queue, 1, &submitInfo, st.fences[st.frame_index]));
+        chk(vkQueueSubmit(vkg.queue, 1, &submitInfo, st.fences[st.frame_index]));
         VkPresentInfoKHR presentInfo = {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
@@ -654,20 +566,20 @@ int main() {
             .pSwapchains = &st.swapchain,
             .pImageIndices = &st.image_index};
 
-        chkSwapchain(vkQueuePresentKHR(st.queue, &presentInfo));
+        chkSwapchain(vkQueuePresentKHR(vkg.queue, &presentInfo));
         if (st.update_swapchain) {
             st.update_swapchain = false;
             glfwGetFramebufferSize(st.window, &st.window_w, &st.window_h);
-            chk(vkDeviceWaitIdle(st.device));
+            chk(vkDeviceWaitIdle(vkg.device));
             
             for (int i = 0; i < st.swapchain_image_count; i++) {
-                vkDestroyImageView(st.device, st.swapchain_image_views[i], NULL);
+                vkDestroyImageView(vkg.device, st.swapchain_image_views[i], NULL);
             }
             free(st.swapchain_image_views);
             free(st.swapchain_images);
             st.swapchain = create_swapchain_with_views(
-                    st.physical_device,
-                    st.device,
+                    vkg.physical_device,
+                    vkg.device,
                     st.surface,
                     st.window_w,
                     st.window_h,
@@ -679,58 +591,47 @@ int main() {
             );
             
             for (int i=0; i < st.swapchain_image_count; i++) {
-                vkDestroySemaphore(st.device, st.render_complete_semaphores[i], NULL);
+                vkDestroySemaphore(vkg.device, st.render_complete_semaphores[i], NULL);
             }
             st.render_complete_semaphores = malloc(sizeof(VkSemaphore) * st.swapchain_image_count);
             for (int i=0; i < st.swapchain_image_count; i++) {
-                chk(vkCreateSemaphore(st.device, &semaphore_ci, NULL, &st.render_complete_semaphores[i]));
+                chk(vkCreateSemaphore(vkg.device, &semaphore_ci, NULL, &st.render_complete_semaphores[i]));
             }
         }
 
         st.frame_index = (st.frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
-    chk(vkDeviceWaitIdle(st.device));
+    chk(vkDeviceWaitIdle(vkg.device));
 
-    vkDestroyPipeline(st.device, st.pipeline, NULL);
-    vkDestroyPipelineLayout(st.device, st.pipeline_layout, NULL);
-    vkDestroyShaderModule(st.device, shader_module, NULL);
-    vkDestroyDescriptorPool(st.device, st.descriptor_pool, NULL);
-    vkDestroyDescriptorSetLayout(st.device, st.desc_set_layout, NULL);
+    vkDestroyPipeline(vkg.device, st.pipeline, NULL);
+    vkDestroyPipelineLayout(vkg.device, st.pipeline_layout, NULL);
+    vkDestroyShaderModule(vkg.device, shader_module, NULL);
+    vkDestroyDescriptorPool(vkg.device, st.descriptor_pool, NULL);
+    vkDestroyDescriptorSetLayout(vkg.device, st.desc_set_layout, NULL);
 
-    vkDestroyImageView(st.device, st.depth_att_view, NULL);
-    vmaDestroyImage(st.vma, st.depth_att, st.depth_att_allocation);
+    destroy_image(&st.depth_att);
 
-    vkDestroyImageView(st.device, st.color_map_view, NULL);
-    vmaDestroyImage(st.vma, st.color_map, st.color_map_allocation);
-    vkDestroySampler(st.device, st.color_map_sampler, NULL);
-
-    vkDestroyImageView(st.device, st.depth_map_view, NULL);
-    vmaDestroyImage(st.vma, st.depth_map, st.depth_map_allocation);
-    vkDestroySampler(st.device, st.depth_map_sampler, NULL);
-
-    vkDestroyImageView(st.device, st.normal_map_view, NULL);
-    vmaDestroyImage(st.vma, st.normal_map, st.normal_map_allocation);
-    vkDestroySampler(st.device, st.normal_map_sampler, NULL);
-
-    vkDestroyCommandPool(st.device, st.command_pool, NULL);
+    destroy_texture(&st.color_map);
+    destroy_texture(&st.normal_map);
+    destroy_texture(&st.depth_map);
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vkDestroyFence(st.device, st.fences[i], NULL);
-        vkDestroySemaphore(st.device, st.image_acquired_semaphores[i], NULL);
+        vkDestroyFence(vkg.device, st.fences[i], NULL);
+        vkDestroySemaphore(vkg.device, st.image_acquired_semaphores[i], NULL);
     }
     for (int i = 0; i < st.swapchain_image_count; i++) {
-        vkDestroySemaphore(st.device, st.render_complete_semaphores[i], NULL);
+        vkDestroySemaphore(vkg.device, st.render_complete_semaphores[i], NULL);
     }
     for (int i = 0; i < st.swapchain_image_count; i++) {
-        vkDestroyImageView(st.device, st.swapchain_image_views[i], NULL);
+        vkDestroyImageView(vkg.device, st.swapchain_image_views[i], NULL);
     }
 
-    vkDestroySwapchainKHR(st.device, st.swapchain, NULL);
-    vkDestroySurfaceKHR(st.instance, st.surface, NULL);
-    vmaDestroyAllocator(st.vma);
-    vkDestroyDevice(st.device, NULL);
-    vkDestroyInstance(st.instance, NULL);
+    vkDestroySwapchainKHR(vkg.device, st.swapchain, NULL);
+    vkDestroySurfaceKHR(vkg.instance, st.surface, NULL);
+
+    vkg_shutdown();
+
     glfwDestroyWindow(st.window);
     glfwTerminate();
 
