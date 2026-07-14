@@ -4,16 +4,13 @@
 
 #include <vulkan/vk_enum_string_helper.h>
 #include "vk_mem_alloc.h"
+#define CGLM_FORCE_DEPTH_ZERO_TO_ONE
 #include "cglm/cglm.h"
 #include "cglm/struct.h"
 
 #include "utils.c"
 #include "vk_helpers.c"
-
-typedef struct Vertex {
-    vec3 pos;
-    vec3 normal;
-} Vertex;
+#include "scene.c"
 
 typedef struct SceneUniforms {
     mat4 view;
@@ -35,7 +32,7 @@ Image create_normal_attachment_with_view(int width, int height)
     VkFormat format = NORMAL_IMAGE_FORMAT;
     normal_image.format = format;
     normal_image.image = create_vkimage(&normal_image.alloc, format,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
     normal_image.view = create_image_view(normal_image.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
     return normal_image;
 }
@@ -92,19 +89,10 @@ void save_texture(
 int main() {
     Image color_att;
 
-    Vertex *vertices;
-    size_t vertex_count;
-    uint32_t *indices;
-    size_t index_count;
     VmaAllocatedBuffer shader_data_buffer;
     VkCommandBuffer cb;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
-    vec3 cam_pos;
-
-    cam_pos[0] = 0.0f;
-    cam_pos[1] = 0.0f;
-    cam_pos[2] = -6.0f;
 
     vkg_init(0, NULL, 0, NULL);
 
@@ -112,88 +100,24 @@ int main() {
     const int image_width = 1920;
 
     color_att.image = create_vkimage(&color_att.alloc, COLOR_IMAGE_FORMAT,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, image_width, image_height, false);
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, image_width, image_height, false);
     color_att.view = create_image_view(color_att.image, COLOR_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
 
     Image depth_att = create_depth_attachment_with_view(image_width,image_height);
     Image normal_att = create_normal_attachment_with_view(image_width, image_height);
 
- float positions[24] = { 1.000000, -1.000000, -1.000000,
- 1.000000, -1.000000, 1.000000,
- -1.000000, -1.000000, 1.000000,
- -1.000000, -1.000000, -1.000000,
- 1.000000, 1.000000, -0.999999,
- 0.999999, 1.000000, 1.000001,
- -1.000000, 1.000000, 1.000000,
- -1.000000, 1.000000, -1.000000 };
+    Scene scene = load_gltf_scene("../assets/teacup.glb");
 
- float texcoords[28] = {1.000000, 0.333333,
- 1.000000, 0.666667,
- 0.666667, 0.666667,
- 0.666667, 0.333333,
- 0.666667, 0.000000,
- 0.000000, 0.333333,
- 0.000000, 0.000000,
- 0.333333, 0.000000,
- 0.333333, 1.000000,
- 0.000000, 1.000000,
- 0.000000, 0.666667,
- 0.333333, 0.333333,
- 0.333333, 0.666667,
- 1.000000, 0.000000, };
-
-float normals[18] = { 0.000000, -1.000000, 0.000000,
- 0.000000, 1.000000, 0.000000,
- 1.000000, 0.000000, 0.000000,
- -0.000000, 0.000000, 1.000000,
- -1.000000, -0.000000, -0.000000,
- 0.000000, 0.000000, -1.000000 };
-
- int ind[108] = { 2,1,1, 3,2,1, 4,3,1,
- 8,1,2, 7,4,2, 6,5,2,
- 5,6,3, 6,7,3, 2,8,3,
- 6,8,4, 7,5,4, 3,4,4,
- 3,9,5, 7,10,5, 8,11,5,
- 1,12,6, 4,13,6, 8,11,6,
- 1,4,1, 2,1,1, 4,3,1,
- 5,14,2, 8,1,2, 6,5,2,
- 1,12,3, 5,6,3, 2,8,3,
- 2,12,4, 6,8,4, 3,4,4,
- 4,13,5, 3,9,5, 8,11,5,
- 5,6,6, 1,12,6, 8,11,6 };
-
-    index_count = 36;
-    vertex_count = 36;
-    indices = malloc(sizeof(uint32_t) * index_count);
-    vertices = malloc(sizeof(Vertex) * vertex_count);
-    for (uint32_t i = 0; i < index_count * 3; i++) {
-        ind[i] -= 1;
-    }
-    for (uint32_t i = 0; i < index_count; i++) {
-        int p = ind[i * 3];
-        int t = ind[i * 3 + 1];
-        int n = ind[i * 3 + 2];
-        Vertex vertex = {
-            .pos = {positions[p * 3], -positions[p * 3 + 1],
-                    positions[p * 3 + 2]},
-            .normal = {normals[n * 3], -normals[n * 3 + 1],
-                       normals[n * 3 + 2]},
-        };
-        vertices[i] = vertex;
-        indices[i] = i;
-    }
-
-    VkDeviceSize vbuf_size = sizeof(Vertex) * vertex_count;
-    VkDeviceSize ibuf_size = sizeof(uint32_t) * index_count;
+    VkDeviceSize vbuf_size = sizeof(Vertex) * scene.vertex_count;
+    VkDeviceSize ibuf_size = sizeof(vert_index) * scene.index_count;
     VmaAllocatedBuffer vibuf = allocate_buffer(
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
             VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
             VMA_ALLOCATION_CREATE_MAPPED_BIT, ibuf_size + vbuf_size);
 
-    memcpy(vibuf.alloc_info.pMappedData, vertices, vbuf_size);
-    memcpy((char *)vibuf.alloc_info.pMappedData + vbuf_size, indices,
-           ibuf_size);
+    memcpy(vibuf.alloc_info.pMappedData, scene.vertices, vbuf_size);
+    memcpy((char *)vibuf.alloc_info.pMappedData + vbuf_size, scene.indices, ibuf_size);
 
     shader_data_buffer = allocate_buffer(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
@@ -270,8 +194,8 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
     VkPipelineRasterizationStateCreateInfo rasterization_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .lineWidth = 1.0f,
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
-        .cullMode = VK_CULL_MODE_FRONT_BIT,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .cullMode = VK_CULL_MODE_BACK_BIT,
     };
     VkPipelineMultisampleStateCreateInfo multisample_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
@@ -313,22 +237,6 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         .pDynamicState = &dynamic_state,
         .layout = pipeline_layout};
     chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &pipeline));
-
-    SceneUniforms uniforms;
-    glm_perspective(glm_rad(45.0f), (float)image_width / (float)image_height,
-        0.1f, 32.0f, uniforms.proj);
-    mat4 mat_identity; glm_mat4_identity(mat_identity);
-    glm_translate_to(mat_identity, cam_pos, uniforms.view);
-    memcpy(shader_data_buffer.alloc_info.pMappedData,
-           &uniforms, sizeof(SceneUniforms));
-
-    PushConstants pc = {
-        .object_id = 1225,
-        .model = {},
-        .scene_uniforms = shader_data_buffer.device_address,
-    };
-    vec3 model_pos = { 1.5f, 0.0f, 0.0f };
-    glm_translate_to(mat_identity, model_pos, pc.model);
 
     chk(vkResetCommandBuffer(cb, 0));
     VkCommandBufferBeginInfo cb_bi = {
@@ -386,22 +294,51 @@ float normals[18] = { 0.000000, -1.000000, 0.000000,
         .pColorAttachments = color_attachment_infos,
         .pDepthAttachment = &depthAttachmentInfo};
     vkCmdBeginRendering(cb, &renderingInfo);
-    VkViewport vp = {.width = (float)(image_width),
-                  .height = (float)(image_height),
-                  .minDepth = 0.0f,
-                  .maxDepth = 1.0f};
+    VkViewport vp = {
+        .x = 0.0f,
+        .y = (float)(image_height),
+        .width = (float)(image_width),
+        .height = -(float)(image_height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
     vkCmdSetViewport(cb, 0, 1, &vp);
-    VkRect2D scissor = {
-        .extent = {.width = (uint32_t)(image_width),
-                .height = (uint32_t)(image_height)}};
+    VkRect2D scissor = {.extent = {.width = (uint32_t)(image_width), .height = (uint32_t)(image_height)}};
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdSetScissor(cb, 0, 1, &scissor);
-    VkDeviceSize vOffset = 0;
-    vkCmdBindVertexBuffers(cb, 0, 1, &vibuf.buffer, &vOffset);
-    vkCmdBindIndexBuffer(cb, vibuf.buffer, vbuf_size, VK_INDEX_TYPE_UINT32);
-    vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                       sizeof(PushConstants), &pc);
-    vkCmdDrawIndexed(cb, index_count, 1, 0, 0, 0);
+
+    SceneUniforms uniforms;
+    float dist = 50.0f;
+    vec3 eye = {dist, dist, dist};
+    vec3 center = {0.0f, 0.0f, 0.0f};
+    vec3 up = {0.0f, 1.0f, 0.0f};
+    glm_lookat(eye, center, up, uniforms.view);
+    glm_ortho(-0.25f, 0.25f, -0.25f, 0.25f, 1.0f, 100.0f, uniforms.proj);
+    memcpy(shader_data_buffer.alloc_info.pMappedData, &uniforms, sizeof(SceneUniforms));
+
+    VkDeviceSize vert_offset = 0;
+    vkCmdBindVertexBuffers(cb, 0, 1, &vibuf.buffer, &vert_offset);
+    for (int i=0; i < scene.node_count; i++) {
+        Node* node = &scene.nodes[i];
+        PushConstants pc = {
+            .object_id = i,
+            .model = {},
+            .scene_uniforms = shader_data_buffer.device_address,
+        };
+        glm_mat4_copy(node->matrix, pc.model);
+
+        Mesh* mesh = node->mesh;
+        assert(mesh);
+        for (int p=0; p < mesh->primitives_count; p++) {
+            Primitive* primitive = &mesh->primitives[p];
+            vkCmdBindIndexBuffer2(cb, vibuf.buffer, vbuf_size + (primitive->index_offset) * sizeof(vert_index),
+                    primitive->index_count * sizeof(vert_index), VK_INDEX_TYPE_UINT32);
+            vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(PushConstants), &pc);
+            vkCmdDrawIndexed(cb, primitive->index_count, 1, 0, 0, 0);
+        }
+    }
+
     vkCmdEndRendering(cb);
 
     chk(vkEndCommandBuffer(cb));

@@ -5,6 +5,7 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include "vk_mem_alloc.h"
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include "cglm/cglm.h"
 #include "cglm/struct.h"
 
@@ -153,71 +154,6 @@ VkSwapchainKHR create_swapchain_with_views(
 
     vkDestroySwapchainKHR(device, swapchain_ci.oldSwapchain, NULL);
     return swapchain;
-}
-
-Texture load_world_tex_map(const char* filename, VkFormat format, VkImageAspectFlags aspect_mask, int width, int height)
-{
-    Texture tex;
-    Image* img = &tex.img;
-
-    tex.img.format = format;
-
-    int pixel_size = get_format_pixel_size(format);
-    int buf_size = pixel_size * width * height;
-    VmaAllocatedBuffer staging_buf = allocate_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT, buf_size);
-
-    char* staging_buf_p = staging_buf.alloc_info.pMappedData;
-    FILE* file = fopen(filename, "rb");
-    if (!file) {
-        fatal("Failed to open texture map file.");
-    }
-    fread(staging_buf_p, buf_size, 1, file);
-    fclose(file);
-
-    img->image = create_vkimage(&img->alloc, format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-            width, height, false);
-
-    VkCommandBuffer cb = begin_command_buffer(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-    transition_image_layout(cb, img->image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            aspect_mask, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
-    VkBufferImageCopy copy = {
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource.aspectMask = aspect_mask,
-        .imageSubresource.mipLevel = 0,
-        .imageSubresource.baseArrayLayer = 0,
-        .imageSubresource.layerCount = 1,
-        .imageOffset = {0, 0, 0},
-        .imageExtent = {width, height, 1},
-    };
-    vkCmdCopyBufferToImage(cb, staging_buf.buffer, img->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-    transition_image_layout(cb, img->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            aspect_mask, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
-    end_one_time_command_buffer(cb);
-
-    vmaDestroyBuffer(vkg.vma, staging_buf.buffer, staging_buf.alloc);
-
-    img->view = create_image_view(img->image, format, aspect_mask);
-
-    VkSamplerCreateInfo sampler_ci = {
-        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .pNext = NULL,
-        .magFilter = VK_FILTER_LINEAR,
-        .minFilter = VK_FILTER_LINEAR,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .anisotropyEnable = VK_FALSE,
-    };
-    chk(vkCreateSampler(vkg.device, &sampler_ci, NULL, &tex.sampler));
-    tex.desc_info = (VkDescriptorImageInfo) {
-        .sampler = tex.sampler,
-        .imageView = img->view,
-        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-    };
-
-    return tex;
 }
 
 int main() {
@@ -413,11 +349,11 @@ int main() {
     };
 	chk(vkAllocateDescriptorSets(vkg.device, &desc_set_alloc, &st.desc_set));
 
-    st.color_map = load_world_tex_map("offline-output/color.bin", COLOR_MAP_FORMAT,
+    st.color_map = load_binary_texture("offline-output/color.bin", COLOR_MAP_FORMAT,
             VK_IMAGE_ASPECT_COLOR_BIT, MAP_WIDTH, MAP_HEIGHT);
-    st.normal_map = load_world_tex_map("offline-output/normal.bin", NORMAL_MAP_FORMAT,
+    st.normal_map = load_binary_texture("offline-output/normal.bin", NORMAL_MAP_FORMAT,
             VK_IMAGE_ASPECT_COLOR_BIT, MAP_WIDTH, MAP_HEIGHT);
-    st.depth_map = load_world_tex_map("offline-output/depth.bin", DEPTH_MAP_FORMAT,
+    st.depth_map = load_binary_texture("offline-output/depth.bin", DEPTH_MAP_FORMAT,
             VK_IMAGE_ASPECT_DEPTH_BIT, MAP_WIDTH, MAP_HEIGHT);
 
     VkDescriptorImageInfo desc_infos[3] = {

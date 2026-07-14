@@ -28,6 +28,19 @@ typedef struct Texture {
     VkDescriptorImageInfo desc_info;
 } Texture;
 
+int get_format_pixel_size(VkFormat format) {
+    switch (format) {
+        case VK_FORMAT_B8G8R8A8_UNORM:
+        case VK_FORMAT_D32_SFLOAT:
+            return 4;
+        case VK_FORMAT_R16G16B16_SFLOAT:
+            return 6;
+        default:
+            fatal("get_format_pixel_size: unknown format");
+            return 0;
+    }
+}
+
 void destroy_texture(Texture* tex) {
     destroy_image(&tex->img);
     vkDestroySampler(vkg.device, tex->sampler, NULL);
@@ -50,7 +63,7 @@ static inline void chk(VkResult result) {
 VkInstance create_instance(uint32_t extension_count, const char* const * extensions) {
     VkApplicationInfo app_info = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                                   .pApplicationName = "Cindy",
-                                  .apiVersion = VK_API_VERSION_1_3};
+                                  .apiVersion = VK_API_VERSION_1_4};
     VkInstanceCreateInfo instance_ci = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app_info,
@@ -121,6 +134,7 @@ VkDevice create_logical_device(uint32_t extension_count, const char* const * ext
         .queueFamilyIndex = queue_family,
         .queueCount = 1,
         .pQueuePriorities = &queue_fam_priority};
+
      VkPhysicalDeviceVulkan11Features enabled_vk11_features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
         .shaderDrawParameters = true};
@@ -137,11 +151,15 @@ VkDevice create_logical_device(uint32_t extension_count, const char* const * ext
         .pNext = &enabled_vk12_features,
         .synchronization2 = true,
         .dynamicRendering = true};
+    VkPhysicalDeviceVulkan14Features enabled_vk14_features = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES,
+        .pNext = &enabled_vk13_features,
+        .maintenance5 = true};
     VkPhysicalDeviceFeatures enabled_vk10_features = {.samplerAnisotropy = VK_TRUE};
 
     VkDeviceCreateInfo device_ci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &enabled_vk13_features,
+        .pNext = &enabled_vk14_features,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queue_ci,
         .enabledExtensionCount = extension_count,
@@ -162,7 +180,7 @@ VmaAllocator create_vma() {
         .physicalDevice = vkg.physical_device,
         .device = vkg.device,
         .instance = vkg.instance,
-        .vulkanApiVersion = VK_API_VERSION_1_3,
+        .vulkanApiVersion = VK_API_VERSION_1_4,
     };
     VmaAllocator vma;
     if (vmaCreateAllocator(&allocator_ci, &vma) != VK_SUCCESS) {
@@ -412,19 +430,6 @@ void end_one_time_command_buffer(VkCommandBuffer cb) {
     vkDestroyFence(vkg.device, fence, NULL);
 }
 
-int get_format_pixel_size(VkFormat format) {
-    switch (format) {
-        case VK_FORMAT_B8G8R8A8_UNORM:
-        case VK_FORMAT_D32_SFLOAT:
-            return 4;
-        case VK_FORMAT_R16G16B16_SFLOAT:
-            return 6;
-        default:
-            fatal("get_format_pixel_size: unknown format");
-            return 0;
-    }
-}
-
 VmaAllocatedBuffer allocate_buffer(VkBufferUsageFlags usage, VmaAllocationCreateFlags flags, size_t size)
 {
     VmaAllocatedBuffer buf;
@@ -487,3 +492,67 @@ Image create_depth_attachment_with_view(
     return depth_att;
 }
 
+Texture load_binary_texture(const char* filename, VkFormat format, VkImageAspectFlags aspect_mask, int width, int height)
+{
+    Texture tex;
+    Image* img = &tex.img;
+
+    tex.img.format = format;
+
+    int pixel_size = get_format_pixel_size(format);
+    int buf_size = pixel_size * width * height;
+    VmaAllocatedBuffer staging_buf = allocate_buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT, buf_size);
+
+    char* staging_buf_p = staging_buf.alloc_info.pMappedData;
+    FILE* file = fopen(filename, "rb");
+    if (!file) {
+        fatal("Failed to open texture file.");
+    }
+    fread(staging_buf_p, buf_size, 1, file);
+    fclose(file);
+
+    img->image = create_vkimage(&img->alloc, format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            width, height, false);
+
+    VkCommandBuffer cb = begin_command_buffer(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+    transition_image_layout(cb, img->image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            aspect_mask, VK_PIPELINE_STAGE_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
+    VkBufferImageCopy copy = {
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource.aspectMask = aspect_mask,
+        .imageSubresource.mipLevel = 0,
+        .imageSubresource.baseArrayLayer = 0,
+        .imageSubresource.layerCount = 1,
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {width, height, 1},
+    };
+    vkCmdCopyBufferToImage(cb, staging_buf.buffer, img->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    transition_image_layout(cb, img->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            aspect_mask, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT);
+    end_one_time_command_buffer(cb);
+
+    vmaDestroyBuffer(vkg.vma, staging_buf.buffer, staging_buf.alloc);
+
+    img->view = create_image_view(img->image, format, aspect_mask);
+
+    VkSamplerCreateInfo sampler_ci = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = NULL,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .anisotropyEnable = VK_FALSE,
+    };
+    chk(vkCreateSampler(vkg.device, &sampler_ci, NULL, &tex.sampler));
+    tex.desc_info = (VkDescriptorImageInfo) {
+        .sampler = tex.sampler,
+        .imageView = img->view,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+
+    return tex;
+}

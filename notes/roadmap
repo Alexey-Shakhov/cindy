@@ -1,0 +1,23 @@
+Renderer
+    Offline / in-game precomputed texture map renderer
+    Dynamic 3D model renderer
+    Render data export & import
+    Different kinds of light sources
+    Shadows
+    Megatexture streaming
+Animation
+    Loading
+    Playback
+Physics
+    Grid-based walk system 
+UI
+    Text, image & shape rendering
+    UI layout builder
+    Widgets
+Sound playback
+Asset saving & loading
+World editor
+Game logic
+    Game events
+    Input handling
+    Savegames

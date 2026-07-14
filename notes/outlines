@@ -1,0 +1,63 @@
+1. Geometry Shader
+This shader takes the standard triangle vertices, calculates the barycentric coordinates (representing the distance to each edge), and passes them to the fragment shader.
+
+glsl#version 450
+
+layout(triangles) in;
+layout(triangle_strip, max_vertices = 3) out;
+
+// Pass through any other vertex data you need (e.g., UVs, Normals)
+layout(location = 0) out vec3 outBarycentric;
+
+void main() {
+    // Vertex 0
+    gl_Position = gl_in[0].gl_Position;
+    outBarycentric = vec3(1.0, 0.0, 0.0);
+    EmitVertex();
+
+    // Vertex 1
+    gl_Position = gl_in[1].gl_Position;
+    outBarycentric = vec3(0.0, 1.0, 0.0);
+    EmitVertex();
+
+    // Vertex 2
+    gl_Position = gl_in[2].gl_Position;
+    outBarycentric = vec3(0.0, 0.0, 1.0);
+    EmitVertex();
+
+    EndPrimitive();
+}
+Используйте код с осторожностью.2. Fragment ShaderThis shader uses screen-space derivatives (fwidth) to ensure the wireframe line thickness remains consistent (in pixels), regardless of how far the object is from the camera.glsl#version 450
+
+layout(location = 0) in vec3 inBarycentric;
+
+// Multiple Render Targets (MRT)
+layout(location = 0) out vec4 outSolidTarget;   // Attachment 0: Solid mesh
+layout(location = 1) out vec4 outLineTarget;    // Attachment 1: Wireframe lines only
+
+void main() {
+    // 1. Render to the Solid Target normally
+    vec3 baseColor = vec3(0.2, 0.5, 0.8); // Example mesh color
+    outSolidTarget = vec4(baseColor, 1.0);
+
+    // 2. Calculate wireframe thickness in screen space
+    float lineWidth = 1.0; // Desired line width in pixels
+    vec3 dPerp = fwidth(inBarycentric);
+    vec3 thickness = dPerp * lineWidth;
+    
+    // Find how close the fragment is to any edge (0.0 = on edge, 1.0 = center)
+    vec3 edgeAlpha = smoothstep(vec3(0.0), thickness, inBarycentric);
+    float minEdgeAlpha = min(min(edgeAlpha.x, edgeAlpha.y), edgeAlpha.z);
+
+    // 3. Render to the Line Target
+    vec4 lineColor = vec4(1.0, 1.0, 0.0, 1.0); // Yellow wireframe
+    
+    if (minEdgeAlpha < 0.5) {
+        // Fragment is on or near an edge
+        outLineTarget = lineColor;
+    } else {
+        // Fragment is inside the triangle; output transparent / clear
+        outLineTarget = vec4(0.0, 0.0, 0.0, 0.0); 
+    }
+}
+Crucial Pipeline SettingsColor Blending: Ensure that Attachment 1 (the line target) has alpha blending enabled (VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA) in your VkPipelineColorBlendStateCreateInfo. Otherwise, the transparent pixels (0.0 alpha) will overwrite your background.Pipeline Layout: Your graphics pipeline must be configured with a layout that expects 2 color attachments.Do you need help configuring the Vulkan blend states for these two specific color attachments, or are you ready to test the shader logic?

@@ -1,6 +1,6 @@
 cc = gcc
 cflags = -g -pthread -Wall -Wno-unused-variable
-includes = -Ilibs -Ilibs/cglm/include
+includes = -Ilibs -Ilibs/cglm/include -Ilibs/cgltf
 links = -lstdc++ -lglfw -lvulkan -lm -lktx
 
 build/vma_impl.o: vma_impl.cpp libs/vk_mem_alloc.h
@@ -10,7 +10,7 @@ build/shaders/bake.spirv: shaders/bake.slang
 	mkdir -p build/shaders
 	slangc shaders/bake.slang -target spirv -o build/shaders/bake.spirv
 
-build/shaders/realtime.spirv:
+build/shaders/realtime.spirv: shaders/realtime.slang
 	mkdir -p build/shaders
 	slangc shaders/realtime.slang -target spirv -o build/shaders/realtime.spirv
 
