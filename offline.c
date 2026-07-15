@@ -125,6 +125,7 @@ int main() {
     };
     VkShaderModule shader_module;
     chk(vkCreateShaderModule(vkg.device, &shader_module_ci, NULL, &shader_module));
+    free(spirv);
 
     VkPushConstantRange push_constant_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT ,

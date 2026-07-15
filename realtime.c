@@ -232,6 +232,7 @@ int main() {
     };
     VkShaderModule shader_module;
     chk(vkCreateShaderModule(vkg.device, &shader_module_ci, NULL, &shader_module));
+    free(spirv);
 
     VkDescriptorSetLayoutBinding bindings[3];
     for (int i=0; i < 3; i++) {
@@ -563,6 +564,7 @@ int main() {
     for (int i = 0; i < st.swapchain_image_count; i++) {
         vkDestroyImageView(vkg.device, st.swapchain_image_views[i], NULL);
     }
+    free(st.render_complete_semaphores);
 
     vkDestroySwapchainKHR(vkg.device, st.swapchain, NULL);
     vkDestroySurfaceKHR(vkg.instance, st.surface, NULL);
