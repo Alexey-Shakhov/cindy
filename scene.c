@@ -18,7 +18,7 @@ typedef struct Mesh {
 
 typedef struct Node {
     uint32_t index;
-    uint32_t parent_index;
+    int parent_index;
     Mesh* mesh;
 
     bool has_matrix;
@@ -215,6 +215,8 @@ Scene load_gltf_scene(const char* filename) {
 
         if (gltf_node->parent) {
             node->parent_index = cgltf_node_index(gltf_data, gltf_node->parent);
+        } else {
+            node->parent_index = -1;
         }
     }
 

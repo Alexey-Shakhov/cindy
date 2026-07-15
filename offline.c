@@ -312,7 +312,13 @@ int main() {
             .model = {},
             .scene_uniforms = shader_data_buffer.device_address,
         };
+
         glm_mat4_copy(node->matrix, pc.model);
+        Node* current = node;
+        while (current->parent_index >= 0) {
+            current = &scene.nodes[current->parent_index];
+            glm_mat4_mul(current->matrix, pc.model, pc.model);
+        }
 
         Mesh* mesh = node->mesh;
         assert(mesh);
