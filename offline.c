@@ -8,6 +8,9 @@
 #include "cglm/cglm.h"
 #include "cglm/struct.h"
 
+#include "decls.h"
+
+#include "memory.c"
 #include "utils.c"
 #include "vk_helpers.c"
 #include "scene.c"
@@ -76,6 +79,8 @@ void save_texture(
 }
 
 int main() {
+    memory_init(MBS(128), 0, KBS(16));
+
     VmaAllocatedBuffer shader_data_buffer;
     VkCommandBuffer cb;
     VkPipelineLayout pipeline_layout;
@@ -93,7 +98,7 @@ int main() {
     Image normal_att = create_image(NORMAL_IMAGE_FORMAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, image_width, image_height, false);
 
-    Scene scene = load_gltf_scene("../assets/teacup.glb");
+    Scene scene = load_gltf_scene("../assets/teacup.glb", &memory.permanent);
 
     VkDeviceSize vbuf_size = sizeof(Vertex) * scene.vertex_count;
     VkDeviceSize ibuf_size = sizeof(vert_index) * scene.index_count;
@@ -115,7 +120,8 @@ int main() {
 
     size_t code_size = 0;
     uint32_t* spirv;
-    if (read_binary_file("shaders/bake.spirv", (char**) &spirv, &code_size)) {
+
+    if (read_binary_file("shaders/bake.spirv", (char**) &spirv, &code_size, &memory.scratch)) {
         fatal("Failed to read shader SPIR-V.");
     }
     VkShaderModuleCreateInfo shader_module_ci = {
@@ -125,7 +131,6 @@ int main() {
     };
     VkShaderModule shader_module;
     chk(vkCreateShaderModule(vkg.device, &shader_module_ci, NULL, &shader_module));
-    free(spirv);
 
     VkPushConstantRange push_constant_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT ,
@@ -391,6 +396,7 @@ int main() {
     vmaDestroyBuffer(vkg.vma, vibuf.buffer, vibuf.alloc);
 
     vkg_shutdown();
+    memory_shutdown();
 
     return 0;
 }

@@ -3,8 +3,6 @@
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
-#include "utils.c"
-
 typedef struct Primitive {
     // uint32_t texture_id;
     uint32_t index_offset;
@@ -56,7 +54,7 @@ void node_make_matrix(Node* node)
     node->has_matrix = true;
 }
  
-Scene load_gltf_scene(const char* filename) {
+Scene load_gltf_scene(const char* filename, Arena* arena) {
     Scene scene = {0};
     // Open the file
     cgltf_options gltf_options = {0};
@@ -70,9 +68,9 @@ Scene load_gltf_scene(const char* filename) {
         fatal("Failed to load GLTF buffers.");
     }
 
-    scene.meshes = malloc(sizeof(Mesh) * gltf_data->meshes_count);
+    scene.meshes = arena_alloc(arena, sizeof(Mesh) * gltf_data->meshes_count);
     scene.mesh_count = gltf_data->meshes_count;
-    scene.nodes = malloc(sizeof(Node) * gltf_data->nodes_count);
+    scene.nodes = arena_alloc(arena, sizeof(Node) * gltf_data->nodes_count);
     scene.node_count = gltf_data->nodes_count;
 
     // Precalculate index and vertex buffer sizes
@@ -95,9 +93,9 @@ Scene load_gltf_scene(const char* filename) {
         }
     }
 
-    scene.vertices = malloc(vertex_count * sizeof(Vertex));
+    scene.vertices = arena_alloc(arena, vertex_count * sizeof(Vertex));
     scene.vertex_count = vertex_count;
-    scene.indices = malloc(index_count * sizeof(vert_index));
+    scene.indices = arena_alloc(arena, index_count * sizeof(vert_index));
     scene.index_count = index_count;
 
     size_t index_offset = 0;
@@ -106,7 +104,7 @@ Scene load_gltf_scene(const char* filename) {
         cgltf_mesh* gltf_mesh = &gltf_data->meshes[i];
         Mesh* mesh = &scene.meshes[i];
         mesh->primitives_count = gltf_mesh->primitives_count;
-        mesh->primitives = malloc(sizeof(Primitive) * mesh->primitives_count);
+        mesh->primitives = arena_alloc(arena, sizeof(Primitive) * mesh->primitives_count);
         // Primitives
         for (size_t p=0; p < gltf_mesh->primitives_count; p++) {
             cgltf_primitive* gltf_primitive = &gltf_mesh->primitives[p];
@@ -178,7 +176,7 @@ Scene load_gltf_scene(const char* filename) {
     // Load nodes
     cgltf_node* gltf_nodes = gltf_data->nodes;
     scene.node_count = gltf_data->nodes_count;
-    scene.nodes = malloc(sizeof(Node) * scene.node_count);
+    scene.nodes = arena_alloc(arena, sizeof(Node) * scene.node_count);
     memset(scene.nodes, 0, sizeof(Node) * scene.node_count);
 
     for (size_t n=0; n < scene.node_count; n++) {
@@ -229,16 +227,4 @@ Scene load_gltf_scene(const char* filename) {
     }
     
     return scene;
-}
-
-// TODO allocate scene in an arena and get rid of this function
-void destroy_scene(Scene* scene)
-{
-    free(scene->nodes);
-    for (size_t i=0; i < scene->mesh_count; i++) {
-        free(scene->meshes[i].primitives);
-    }
-    free(scene->meshes);
-    free(scene->vertices);
-    free(scene->indices);
 }

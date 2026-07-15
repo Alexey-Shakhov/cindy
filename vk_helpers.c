@@ -83,7 +83,7 @@ VkPhysicalDevice choose_physical_device() {
     VkInstance instance = vkg.instance;
     uint32_t dev_count;
     vkEnumeratePhysicalDevices(instance, &dev_count, NULL);
-    VkPhysicalDevice *devices = malloc(sizeof(VkPhysicalDevice) * dev_count);
+    VkPhysicalDevice *devices = scratch_alloc(sizeof(VkPhysicalDevice) * dev_count);
     vkEnumeratePhysicalDevices(instance, &dev_count, devices);
     VkPhysicalDevice chosen_dev = VK_NULL_HANDLE;
     for (int i = 0; i < dev_count; i++) {
@@ -98,7 +98,6 @@ VkPhysicalDevice choose_physical_device() {
     if (chosen_dev == VK_NULL_HANDLE) {
         chosen_dev = devices[0];
     }
-    free(devices);
     return chosen_dev;
 }
 
@@ -110,7 +109,7 @@ uint32_t choose_queue_family() {
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
                                              NULL);
     VkQueueFamilyProperties *queue_families =
-        malloc(sizeof(VkQueueFamilyProperties) * queue_family_count);
+        scratch_alloc(sizeof(VkQueueFamilyProperties) * queue_family_count);
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
                                              queue_families);
     uint32_t chosen_queue_fam = 0;
@@ -120,7 +119,6 @@ uint32_t choose_queue_family() {
             break;
         }
     }
-    free(queue_families);
 
     return chosen_queue_fam;
 }
@@ -273,6 +271,8 @@ VkCommandPool create_command_pool() {
 void vkg_init(uint32_t dev_ext_count, const char** dev_extensions,
         uint32_t inst_ext_count, const char** instance_extensions)
 {
+    Marker mem = scratch_begin();
+
     vkg.instance = create_instance(inst_ext_count, instance_extensions);
     vkg.physical_device = choose_physical_device();
     vkg.queue_fam = choose_queue_family();
@@ -280,6 +280,8 @@ void vkg_init(uint32_t dev_ext_count, const char** dev_extensions,
     vkGetDeviceQueue(vkg.device, vkg.queue_fam, 0, &vkg.queue);
     vkg.vma = create_vma();
     vkg.command_pool = create_command_pool();
+
+    scratch_end(mem);
 }
 
 void vkg_shutdown() {

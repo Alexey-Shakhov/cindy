@@ -1,7 +1,10 @@
 #include <stdlib.h>
-#include "utils.c"
 
 #define MEM_ALIGNMENT 8
+
+#define KBS(n) (1024*n)
+#define MBS(n) (1024*1024*n)
+#define GBS(n) (1024*1024*1024*n)
 
 typedef struct Arena {
     uint8_t* buffer;

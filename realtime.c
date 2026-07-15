@@ -9,6 +9,9 @@
 #include "cglm/cglm.h"
 #include "cglm/struct.h"
 
+#include "decls.h"
+
+#include "memory.c"
 #include "utils.c"
 #include "vk_helpers.c"
 
@@ -142,12 +145,12 @@ VkSwapchainKHR create_swapchain_with_views(
     if (vkGetSwapchainImagesKHR(device, swapchain, p_image_count, NULL) != VK_SUCCESS) {
         fatal("Failed to get swapchain image count.");
     }
-    *p_images = malloc(sizeof(VkImage) * (*p_image_count));
+    *p_images = perm_alloc(sizeof(VkImage) * (*p_image_count));
     if (vkGetSwapchainImagesKHR(device, swapchain, p_image_count, *p_images) != VK_SUCCESS) {
         fatal("Failed to get swapchain images.");
     }
 
-    *p_image_views = malloc(sizeof(VkImageView) * (*p_image_count));
+    *p_image_views = perm_alloc(sizeof(VkImageView) * (*p_image_count));
     for (int i = 0; i < *p_image_count; i++) {
         (*p_image_views)[i] = create_image_view((*p_images)[i], SWAPCHAIN_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
     }
@@ -157,6 +160,7 @@ VkSwapchainKHR create_swapchain_with_views(
 }
 
 int main() {
+    memory_init(MBS(64), MBS(4), MBS(1));
     // TODO create state_defaults_init function
     st.cam_pos[0] = 0.0f;
     st.cam_pos[1] = 0.0f;
@@ -202,7 +206,7 @@ int main() {
         }
     }
 
-    st.render_complete_semaphores = malloc(sizeof(VkSemaphore) * st.swapchain_image_count);
+    st.render_complete_semaphores = perm_alloc(sizeof(VkSemaphore) * st.swapchain_image_count);
     for (int i = 0; i < st.swapchain_image_count; i++) {
         if (vkCreateSemaphore(vkg.device, &semaphore_ci, NULL,
                       &st.render_complete_semaphores[i]) != VK_SUCCESS) {
@@ -222,7 +226,7 @@ int main() {
 
     size_t code_size = 0;
     uint32_t* spirv;
-    if (read_binary_file("shaders/realtime.spirv", (char**) &spirv, &code_size)) {
+    if (read_binary_file("shaders/realtime.spirv", (char**) &spirv, &code_size, &memory.scratch)) {
         fatal("Failed to read shader SPIR-V.");
     }
     VkShaderModuleCreateInfo shader_module_ci = {
@@ -232,7 +236,6 @@ int main() {
     };
     VkShaderModule shader_module;
     chk(vkCreateShaderModule(vkg.device, &shader_module_ci, NULL, &shader_module));
-    free(spirv);
 
     VkDescriptorSetLayoutBinding bindings[3];
     for (int i=0; i < 3; i++) {
@@ -513,8 +516,6 @@ int main() {
             for (int i = 0; i < st.swapchain_image_count; i++) {
                 vkDestroyImageView(vkg.device, st.swapchain_image_views[i], NULL);
             }
-            free(st.swapchain_image_views);
-            free(st.swapchain_images);
             st.swapchain = create_swapchain_with_views(
                     vkg.physical_device,
                     vkg.device,
@@ -531,7 +532,7 @@ int main() {
             for (int i=0; i < st.swapchain_image_count; i++) {
                 vkDestroySemaphore(vkg.device, st.render_complete_semaphores[i], NULL);
             }
-            st.render_complete_semaphores = malloc(sizeof(VkSemaphore) * st.swapchain_image_count);
+            st.render_complete_semaphores = perm_alloc(sizeof(VkSemaphore) * st.swapchain_image_count);
             for (int i=0; i < st.swapchain_image_count; i++) {
                 chk(vkCreateSemaphore(vkg.device, &semaphore_ci, NULL, &st.render_complete_semaphores[i]));
             }
@@ -564,7 +565,6 @@ int main() {
     for (int i = 0; i < st.swapchain_image_count; i++) {
         vkDestroyImageView(vkg.device, st.swapchain_image_views[i], NULL);
     }
-    free(st.render_complete_semaphores);
 
     vkDestroySwapchainKHR(vkg.device, st.swapchain, NULL);
     vkDestroySurfaceKHR(vkg.instance, st.surface, NULL);
@@ -573,6 +573,8 @@ int main() {
 
     glfwDestroyWindow(st.window);
     glfwTerminate();
+
+    memory_shutdown();
 
     return 0;
 }
