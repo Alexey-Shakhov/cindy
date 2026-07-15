@@ -1,3 +1,5 @@
+const VkFormat DEPTH_MAP_FORMAT = VK_FORMAT_D32_SFLOAT;
+
 typedef struct VulkanGlobals {
     VkInstance instance;
     VkPhysicalDevice physical_device;
@@ -244,6 +246,16 @@ VkImageView create_image_view(VkImage image, VkFormat format, VkImageAspectFlags
     return image_view;
 }
 
+Image create_image(VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect_mask,
+        int width, int height, bool cpu_side)
+{
+    Image image;
+    image.format = format;
+    image.image = create_vkimage(&image.alloc, format, usage, width, height, cpu_side);
+    image.view = create_image_view(image.image, format, aspect_mask);
+    return image;
+}
+
 VkCommandPool create_command_pool() {
     VkCommandPoolCreateInfo command_pool_ci = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -457,39 +469,20 @@ VmaAllocatedBuffer allocate_buffer(VkBufferUsageFlags usage, VmaAllocationCreate
     return buf;
 }
 
-const VkFormat DEPTH_MAP_FORMAT = VK_FORMAT_D32_SFLOAT;
-Image create_depth_attachment_with_view(
-        int width,
-        int height)
-{
-    /*
-    #define DEPTH_FORMAT_COUNT 2
-    VkFormat depth_format_list[DEPTH_FORMAT_COUNT] = {
-        VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT};
-    VkFormat depth_format = VK_FORMAT_UNDEFINED;
-    for (int i = 0; i < DEPTH_FORMAT_COUNT; i++) {
-        VkFormatProperties2 format_properties = {
-            .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2};
-        vkGetPhysicalDeviceFormatProperties2(physical_device, depth_format_list[i],
-                                             &format_properties);
-        if (format_properties.formatProperties.optimalTilingFeatures &
-            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            depth_format = depth_format_list[i];
+VkFormat find_optimal_tiling_format(int format_count, VkFormat* formats, VkFormatFeatureFlags2 features) {
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    for (int i = 0; i < format_count; i++) {
+        VkFormatProperties2 format_properties = { .sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2 };
+        vkGetPhysicalDeviceFormatProperties2(vkg.physical_device, formats[i], &format_properties);
+        if (format_properties.formatProperties.optimalTilingFeatures & features) {
+            format = formats[i];
             break;
         }
     }
-    if (depth_format == VK_FORMAT_UNDEFINED) {
+    if (format == VK_FORMAT_UNDEFINED) {
         fatal("Failed to find a suitable depth format.");
     }
-    */
-    Image depth_att;
-    depth_att.format = DEPTH_MAP_FORMAT;
-    // TODO specify usage for offline and in-game attachments properly
-    depth_att.image = create_vkimage(&depth_att.alloc, depth_att.format,
-            VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-            width, height, false);
-    depth_att.view = create_image_view(depth_att.image, depth_att.format, VK_IMAGE_ASPECT_DEPTH_BIT);
-    return depth_att;
+    return format;
 }
 
 Texture load_binary_texture(const char* filename, VkFormat format, VkImageAspectFlags aspect_mask, int width, int height)

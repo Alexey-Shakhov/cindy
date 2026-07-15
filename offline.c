@@ -26,17 +26,6 @@ typedef struct PushConstants {
 const VkFormat COLOR_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_UNORM;
 const VkFormat NORMAL_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_UNORM;
 
-Image create_normal_attachment_with_view(int width, int height)
-{
-    Image normal_image;
-    VkFormat format = NORMAL_IMAGE_FORMAT;
-    normal_image.format = format;
-    normal_image.image = create_vkimage(&normal_image.alloc, format,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, width, height, false);
-    normal_image.view = create_image_view(normal_image.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
-    return normal_image;
-}
-
 void save_texture(
     VkImage image,
     VkFormat format,
@@ -87,8 +76,6 @@ void save_texture(
 }
 
 int main() {
-    Image color_att;
-
     VmaAllocatedBuffer shader_data_buffer;
     VkCommandBuffer cb;
     VkPipelineLayout pipeline_layout;
@@ -99,12 +86,12 @@ int main() {
     const int image_height = 1080;
     const int image_width = 1920;
 
-    color_att.image = create_vkimage(&color_att.alloc, COLOR_IMAGE_FORMAT,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, image_width, image_height, false);
-    color_att.view = create_image_view(color_att.image, COLOR_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
-
-    Image depth_att = create_depth_attachment_with_view(image_width,image_height);
-    Image normal_att = create_normal_attachment_with_view(image_width, image_height);
+    Image color_att = create_image(COLOR_IMAGE_FORMAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, image_width, image_height, false);
+    Image depth_att = create_image(DEPTH_MAP_FORMAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, image_width, image_height, false);
+    Image normal_att = create_image(NORMAL_IMAGE_FORMAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, image_width, image_height, false);
 
     Scene scene = load_gltf_scene("../assets/teacup.glb");
 

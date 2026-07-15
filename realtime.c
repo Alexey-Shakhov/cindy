@@ -187,7 +187,8 @@ int main() {
             VK_NULL_HANDLE
     );
 
-    st.depth_att = create_depth_attachment_with_view(st.window_w, st.window_h);
+    st.depth_att = create_image(DEPTH_MAP_FORMAT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, st.window_w, st.window_h, false);
 
     VkSemaphoreCreateInfo semaphore_ci = {
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
