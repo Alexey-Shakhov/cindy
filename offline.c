@@ -79,7 +79,7 @@ void save_texture(
 }
 
 int main() {
-    memory_init(MBS(128), 0, KBS(16));
+    memory_init(MBS(128), KBS(16));
 
     VmaAllocatedBuffer shader_data_buffer;
     VkCommandBuffer cb;
@@ -98,7 +98,7 @@ int main() {
     Image normal_att = create_image(NORMAL_IMAGE_FORMAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, image_width, image_height, false);
 
-    Scene scene = load_gltf_scene("../assets/teacup.glb", &memory.permanent);
+    Scene scene = load_gltf_scene("../assets/teacup.glb", &memory.total);
 
     VkDeviceSize vbuf_size = sizeof(Vertex) * scene.vertex_count;
     VkDeviceSize ibuf_size = sizeof(vert_index) * scene.index_count;

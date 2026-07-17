@@ -15,6 +15,8 @@
 #include "utils.c"
 #include "vk_helpers.c"
 
+Arena g_perm;
+
 #define MAX_FRAMES_IN_FLIGHT 2
 const VkFormat SWAPCHAIN_IMAGE_FORMAT = VK_FORMAT_B8G8R8A8_SRGB;
 
@@ -145,12 +147,12 @@ VkSwapchainKHR create_swapchain_with_views(
     if (vkGetSwapchainImagesKHR(device, swapchain, p_image_count, NULL) != VK_SUCCESS) {
         fatal("Failed to get swapchain image count.");
     }
-    *p_images = arena_alloc(&memory.permanent, sizeof(VkImage) * (*p_image_count));
+    *p_images = arena_alloc(&g_perm, sizeof(VkImage) * (*p_image_count));
     if (vkGetSwapchainImagesKHR(device, swapchain, p_image_count, *p_images) != VK_SUCCESS) {
         fatal("Failed to get swapchain images.");
     }
 
-    *p_image_views = arena_alloc(&memory.permanent, sizeof(VkImageView) * (*p_image_count));
+    *p_image_views = arena_alloc(&g_perm, sizeof(VkImageView) * (*p_image_count));
     for (int i = 0; i < *p_image_count; i++) {
         (*p_image_views)[i] = create_image_view((*p_images)[i], SWAPCHAIN_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
     }
@@ -160,7 +162,8 @@ VkSwapchainKHR create_swapchain_with_views(
 }
 
 int main() {
-    memory_init(MBS(64), MBS(4), MBS(1));
+    memory_init(MBS(256), MBS(1));
+    g_perm = arena_init(&memory.total, MBS(256 - 1));
     // TODO create state_defaults_init function
     st.cam_pos[0] = 0.0f;
     st.cam_pos[1] = 0.0f;
@@ -206,7 +209,7 @@ int main() {
         }
     }
 
-    st.render_complete_semaphores = arena_alloc(&memory.permanent, sizeof(VkSemaphore) * st.swapchain_image_count);
+    st.render_complete_semaphores = arena_alloc(&g_perm, sizeof(VkSemaphore) * st.swapchain_image_count);
     for (int i = 0; i < st.swapchain_image_count; i++) {
         if (vkCreateSemaphore(vkg.device, &semaphore_ci, NULL,
                       &st.render_complete_semaphores[i]) != VK_SUCCESS) {
@@ -532,7 +535,7 @@ int main() {
             for (int i=0; i < st.swapchain_image_count; i++) {
                 vkDestroySemaphore(vkg.device, st.render_complete_semaphores[i], NULL);
             }
-            st.render_complete_semaphores = arena_alloc(&memory.permanent, sizeof(VkSemaphore) * st.swapchain_image_count);
+            st.render_complete_semaphores = arena_alloc(&g_perm, sizeof(VkSemaphore) * st.swapchain_image_count);
             for (int i=0; i < st.swapchain_image_count; i++) {
                 chk(vkCreateSemaphore(vkg.device, &semaphore_ci, NULL, &st.render_complete_semaphores[i]));
             }
