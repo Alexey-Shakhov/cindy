@@ -10,6 +10,7 @@
 
 #include "decls.h"
 #include "typedefs.c"
+#include "linux.c"
 #include "memory.c"
 #include "utils.c"
 #include "vk_helpers.c"
