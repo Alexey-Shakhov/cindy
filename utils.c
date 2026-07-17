@@ -7,19 +7,31 @@ void fatal(const char* message) {
 }
 
 // TODO add error checking
-int read_binary_file(const char *filename, char* *const o_dest, size_t *o_size, Arena* arena) {   
-    FILE *file = fopen(filename, "rb");
+// If null_term is true, *o_size is going to be without the null terminator
+int read_file(const char *filename, bool null_term, char* *const o_dest, size_t *o_size, Arena* arena) {   
+    FILE* file = fopen(filename, "rb");
     if (!file)
         return 1;
-    
-    fseek(file, 0, SEEK_END);
-    *o_size = ftell(file);
-    rewind(file);
-    
-    *o_dest = arena_alloc(arena, *o_size);
-    fread(*o_dest, *o_size, 1, file);
 
+    fseek(file, 0, SEEK_END);
+    size_t file_size = ftell(file);
+    rewind(file);
+
+    size_t output_size = file_size;
+    if (null_term) {
+        output_size++;
+    }
+    
+    char* dest = arena_alloc(arena, output_size);
+    fread(dest, file_size, 1, file);
     fclose(file);
+
+    if (null_term) {
+        dest[output_size - 1] = '\0';
+    }
+
+    *o_dest = dest;
+    *o_size = null_term ? output_size - 1 : output_size;
 
     return 0;
 }   

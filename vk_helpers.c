@@ -1,3 +1,5 @@
+#include <shaderc/shaderc.h>
+
 const VkFormat DEPTH_MAP_FORMAT = VK_FORMAT_D32_SFLOAT;
 
 struct {
@@ -42,16 +44,28 @@ static inline void chk(VkResult result) {
     }
 }
 
-VkShaderModule create_shader_module(const char* filename) {
-    size_t code_size = 0;
-    uint32_t* spirv;
+VkShaderModule create_shader_module(const char* filename, shaderc_shader_kind kind) {
+    char* code;
+    size_t code_length;
     Marker m = marker_new(&memory.scratch);
-    if (read_binary_file(filename, (char**) &spirv, &code_size, &memory.scratch)) {
-        fatal("Failed to read shader SPIR-V.");
+    if (read_file(filename, true, &code, &code_length, &memory.scratch)) {
+        fatal("Failed to read shader code.");
     }
+
+    shaderc_compiler_t compiler = shaderc_compiler_initialize();
+    shaderc_compile_options_t options = shaderc_compile_options_initialize();
+    shaderc_compilation_result_t result = shaderc_compile_into_spv(
+            compiler, code, code_length, kind, filename, "main", options);
+
+    if (shaderc_result_get_compilation_status(result) != shaderc_compilation_status_success) {
+        fatal("Shader compilation failed.");
+    }
+
+    uint32_t* spirv = (uint32_t*) shaderc_result_get_bytes(result);
+    size_t spirv_size = shaderc_result_get_length(result);
     VkShaderModuleCreateInfo shader_module_ci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = code_size,
+        .codeSize = spirv_size,
         .pCode = spirv,
     };
     VkShaderModule shader_module;

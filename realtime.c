@@ -227,7 +227,8 @@ int main() {
         fatal("Failed to allocate command buffers.");
     }
 
-    VkShaderModule shader_module = create_shader_module("shaders/realtime.spirv");
+    VkShaderModule vert_shader_module = create_shader_module("../shaders/realtime_vert.glsl", shaderc_glsl_vertex_shader);
+    VkShaderModule frag_shader_module = create_shader_module("../shaders/realtime_frag.glsl", shaderc_glsl_fragment_shader);
 
     VkDescriptorSetLayoutBinding bindings[3];
     for (int i=0; i < 3; i++) {
@@ -258,12 +259,12 @@ int main() {
     VkPipelineShaderStageCreateInfo shader_stages[2] = {
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
          .stage = VK_SHADER_STAGE_VERTEX_BIT,
-         .module = shader_module,
-         .pName = "vertex_main"},
+         .module = vert_shader_module,
+         .pName = "main"},
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
          .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-         .module = shader_module,
-         .pName = "fragment_main"}};
+         .module = frag_shader_module,
+         .pName = "main"}};
     VkPipelineVertexInputStateCreateInfo vertex_input_state = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 0,
@@ -537,7 +538,8 @@ int main() {
 
     vkDestroyPipeline(vkg.device, st.pipeline, NULL);
     vkDestroyPipelineLayout(vkg.device, st.pipeline_layout, NULL);
-    vkDestroyShaderModule(vkg.device, shader_module, NULL);
+    vkDestroyShaderModule(vkg.device, vert_shader_module, NULL);
+    vkDestroyShaderModule(vkg.device, frag_shader_module, NULL);
     vkDestroyDescriptorPool(vkg.device, st.descriptor_pool, NULL);
     vkDestroyDescriptorSetLayout(vkg.device, st.desc_set_layout, NULL);
 

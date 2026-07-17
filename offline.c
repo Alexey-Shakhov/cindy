@@ -117,7 +117,8 @@ int main() {
 
     cb = allocate_command_buffer();
 
-    VkShaderModule shader_module = create_shader_module("shaders/bake.spirv");
+    VkShaderModule vert_shader_module = create_shader_module("../shaders/bake_vert.glsl", shaderc_glsl_vertex_shader);
+    VkShaderModule frag_shader_module = create_shader_module("../shaders/bake_frag.glsl", shaderc_glsl_fragment_shader);
 
     VkPushConstantRange push_constant_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT ,
@@ -134,12 +135,12 @@ int main() {
     VkPipelineShaderStageCreateInfo shader_stages[2] = {
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
          .stage = VK_SHADER_STAGE_VERTEX_BIT,
-         .module = shader_module,
-         .pName = "vertex_main"},
+         .module = vert_shader_module,
+         .pName = "main"},
         {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
          .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-         .module = shader_module,
-         .pName = "fragment_main"}};
+         .module = frag_shader_module,
+         .pName = "main"}};
     VkVertexInputBindingDescription vertex_binding = {
         .binding = 0,
         .stride = sizeof(Vertex),
@@ -374,7 +375,8 @@ int main() {
 
     vkDestroyPipeline(vkg.device, vk_pipeline, NULL);
     vkDestroyPipelineLayout(vkg.device, pipeline_layout, NULL);
-    vkDestroyShaderModule(vkg.device, shader_module, NULL);
+    vkDestroyShaderModule(vkg.device, vert_shader_module, NULL);
+    vkDestroyShaderModule(vkg.device, frag_shader_module, NULL);
     vmaDestroyBuffer(vkg.vma, shader_data_buffer.buffer, shader_data_buffer.alloc);
 
     destroy_image(&color_att);
