@@ -83,27 +83,3 @@ void memory_shutdown() {
     arena_free(&memory.frame);
     arena_free(&memory.scratch);
 }
-
-void* perm_alloc(size_t amount) {
-    return arena_alloc(&memory.permanent, amount);
-}
-
-void* frame_alloc(size_t amount) {
-    return arena_alloc(&memory.frame, amount);
-}
-
-void frame_reset() {
-    arena_reset(&memory.frame);
-}
-
-Marker scratch_begin() {
-    return marker_new(&memory.scratch);
-}
-
-void* scratch_alloc(size_t amount) {
-    return arena_alloc(&memory.scratch, amount);
-}
-
-void scratch_end(const Marker marker) {
-    marker_reset(marker);
-}

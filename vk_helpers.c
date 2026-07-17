@@ -83,7 +83,7 @@ VkPhysicalDevice choose_physical_device() {
     VkInstance instance = vkg.instance;
     uint32_t dev_count;
     vkEnumeratePhysicalDevices(instance, &dev_count, NULL);
-    VkPhysicalDevice *devices = scratch_alloc(sizeof(VkPhysicalDevice) * dev_count);
+    VkPhysicalDevice *devices = arena_alloc(&memory.scratch, sizeof(VkPhysicalDevice) * dev_count);
     vkEnumeratePhysicalDevices(instance, &dev_count, devices);
     VkPhysicalDevice chosen_dev = VK_NULL_HANDLE;
     for (int i = 0; i < dev_count; i++) {
@@ -109,7 +109,7 @@ uint32_t choose_queue_family() {
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
                                              NULL);
     VkQueueFamilyProperties *queue_families =
-        scratch_alloc(sizeof(VkQueueFamilyProperties) * queue_family_count);
+        arena_alloc(&memory.scratch, sizeof(VkQueueFamilyProperties) * queue_family_count);
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
                                              queue_families);
     uint32_t chosen_queue_fam = 0;
@@ -271,7 +271,7 @@ VkCommandPool create_command_pool() {
 void vkg_init(uint32_t dev_ext_count, const char** dev_extensions,
         uint32_t inst_ext_count, const char** instance_extensions)
 {
-    Marker mem = scratch_begin();
+    Marker mem = marker_new(&memory.scratch);
 
     vkg.instance = create_instance(inst_ext_count, instance_extensions);
     vkg.physical_device = choose_physical_device();
@@ -281,7 +281,7 @@ void vkg_init(uint32_t dev_ext_count, const char** dev_extensions,
     vkg.vma = create_vma();
     vkg.command_pool = create_command_pool();
 
-    scratch_end(mem);
+    marker_reset(mem);
 }
 
 void vkg_shutdown() {

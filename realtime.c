@@ -145,12 +145,12 @@ VkSwapchainKHR create_swapchain_with_views(
     if (vkGetSwapchainImagesKHR(device, swapchain, p_image_count, NULL) != VK_SUCCESS) {
         fatal("Failed to get swapchain image count.");
     }
-    *p_images = perm_alloc(sizeof(VkImage) * (*p_image_count));
+    *p_images = arena_alloc(&memory.permanent, sizeof(VkImage) * (*p_image_count));
     if (vkGetSwapchainImagesKHR(device, swapchain, p_image_count, *p_images) != VK_SUCCESS) {
         fatal("Failed to get swapchain images.");
     }
 
-    *p_image_views = perm_alloc(sizeof(VkImageView) * (*p_image_count));
+    *p_image_views = arena_alloc(&memory.permanent, sizeof(VkImageView) * (*p_image_count));
     for (int i = 0; i < *p_image_count; i++) {
         (*p_image_views)[i] = create_image_view((*p_images)[i], SWAPCHAIN_IMAGE_FORMAT, VK_IMAGE_ASPECT_COLOR_BIT);
     }
@@ -206,7 +206,7 @@ int main() {
         }
     }
 
-    st.render_complete_semaphores = perm_alloc(sizeof(VkSemaphore) * st.swapchain_image_count);
+    st.render_complete_semaphores = arena_alloc(&memory.permanent, sizeof(VkSemaphore) * st.swapchain_image_count);
     for (int i = 0; i < st.swapchain_image_count; i++) {
         if (vkCreateSemaphore(vkg.device, &semaphore_ci, NULL,
                       &st.render_complete_semaphores[i]) != VK_SUCCESS) {
@@ -532,7 +532,7 @@ int main() {
             for (int i=0; i < st.swapchain_image_count; i++) {
                 vkDestroySemaphore(vkg.device, st.render_complete_semaphores[i], NULL);
             }
-            st.render_complete_semaphores = perm_alloc(sizeof(VkSemaphore) * st.swapchain_image_count);
+            st.render_complete_semaphores = arena_alloc(&memory.permanent, sizeof(VkSemaphore) * st.swapchain_image_count);
             for (int i=0; i < st.swapchain_image_count; i++) {
                 chk(vkCreateSemaphore(vkg.device, &semaphore_ci, NULL, &st.render_complete_semaphores[i]));
             }
