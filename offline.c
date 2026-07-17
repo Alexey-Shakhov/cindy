@@ -373,10 +373,9 @@ int main() {
 
     chk(vkDeviceWaitIdle(vkg.device));
 
-    vkDestroyPipeline(vkg.device, vk_pipeline, NULL);
+    destroy_pipeline(&pipeline);
+
     vkDestroyPipelineLayout(vkg.device, pipeline_layout, NULL);
-    vkDestroyShaderModule(vkg.device, vert_shader_module, NULL);
-    vkDestroyShaderModule(vkg.device, frag_shader_module, NULL);
     vmaDestroyBuffer(vkg.vma, shader_data_buffer.buffer, shader_data_buffer.alloc);
 
     destroy_image(&color_att);

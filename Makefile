@@ -1,7 +1,7 @@
 cc = gcc
 cflags = -g -pthread -Wall -Wno-unused-variable
 includes = -Ilibs -Ilibs/cglm/include -Ilibs/cgltf
-links = -lstdc++ -lglfw -lvulkan -lm -lshaderc_combined -lglslang -lSPIRV-Tools -lSPIRV-Tools-opt -lpthread
+links = -lstdc++ -lglfw -lvulkan -lm -lshaderc_combined -lglslang -lSPIRV-Tools -lSPIRV-Tools-opt
 
 build/vma_impl.o: vma_impl.cpp libs/vk_mem_alloc.h
 	g++ -c vma_impl.cpp -std=c++17 -O2 -o build/vma_impl.o

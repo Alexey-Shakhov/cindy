@@ -1,9 +1,22 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
 void fatal(const char* message) {
     fprintf(stderr, "%s\n", message);
     exit(EXIT_FAILURE);
+}
+
+// TODO This is POSIX-specific. Make cross-platform
+time_t get_file_timestamp(const char* filename) {
+    struct stat file_info;
+    if (stat(filename, &file_info) != 0) {
+        return 0;
+    }
+    return file_info.st_mtime;
 }
 
 // TODO add error checking

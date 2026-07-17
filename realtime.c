@@ -54,7 +54,7 @@ struct State {
     VkDescriptorSetLayout desc_set_layout;
     VkDescriptorSet desc_set;
     VkPipelineLayout pipeline_layout;
-    VkPipeline pipeline;
+    VkPipeline vk_pipeline;
     uint32_t image_index;
     bool update_swapchain;
     vec3 cam_pos;
@@ -323,8 +323,7 @@ int main() {
         .pColorBlendState = &color_blend_state,
         .pDynamicState = &dynamic_state,
         .layout = st.pipeline_layout};
-    chk(vkCreateGraphicsPipelines(
-                vkg.device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &st.pipeline));
+    Pipeline pipeline = create_pipeline(&pipeline_ci, &st.vk_pipeline);
 
     VkDescriptorPoolSize pool_size = {
         .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -370,7 +369,14 @@ int main() {
     };
 	vkUpdateDescriptorSets(vkg.device, 1, &write_desc_set, 0, NULL);
 
+    time_t frag_timestamp = get_file_timestamp("../shaders/realtime_frag.glsl");
     while (!glfwWindowShouldClose(st.window)) {
+        time_t new_frag_timestamp = get_file_timestamp("../shaders/realtime_frag.glsl");
+        if (new_frag_timestamp > frag_timestamp) {
+            frag_timestamp = new_frag_timestamp;
+            change_shader(&pipeline, "../shaders/realtime_frag.glsl", shaderc_glsl_fragment_shader, &g_perm);
+        }
+
         glfwPollEvents();
 
         chk(vkWaitForFences(vkg.device, 1, &st.fences[st.frame_index], true, UINT64_MAX));
@@ -456,7 +462,7 @@ int main() {
                 .height = (uint32_t)(st.window_h)
             }
         };
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, st.pipeline);
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, st.vk_pipeline);
         vkCmdSetScissor(cb, 0, 1, &scissor);
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, st.pipeline_layout, 0, 1, &st.desc_set, 0, NULL);
         vkCmdDraw(cb, 3, 1, 0, 0);
@@ -536,10 +542,8 @@ int main() {
 
     chk(vkDeviceWaitIdle(vkg.device));
 
-    vkDestroyPipeline(vkg.device, st.pipeline, NULL);
+    destroy_pipeline(&pipeline);
     vkDestroyPipelineLayout(vkg.device, st.pipeline_layout, NULL);
-    vkDestroyShaderModule(vkg.device, vert_shader_module, NULL);
-    vkDestroyShaderModule(vkg.device, frag_shader_module, NULL);
     vkDestroyDescriptorPool(vkg.device, st.descriptor_pool, NULL);
     vkDestroyDescriptorSetLayout(vkg.device, st.desc_set_layout, NULL);
 

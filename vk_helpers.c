@@ -33,8 +33,8 @@ typedef struct VmaAllocatedBuffer {
 } VmaAllocatedBuffer;
 
 typedef struct Pipeline {
-    VkGraphicsPipelineCreateInfo* const p_info;
-    VkPipeline* const p_pl;
+    VkGraphicsPipelineCreateInfo* const info;
+    VkPipeline* const pl;
 } Pipeline;
 
 static inline void chk(VkResult result) {
@@ -58,7 +58,7 @@ VkShaderModule create_shader_module(const char* filename, shaderc_shader_kind ki
             compiler, code, code_length, kind, filename, "main", options);
 
     if (shaderc_result_get_compilation_status(result) != shaderc_compilation_status_success) {
-        fatal("Shader compilation failed.");
+        return VK_NULL_HANDLE;
     }
 
     uint32_t* spirv = (uint32_t*) shaderc_result_get_bytes(result);
@@ -75,12 +75,48 @@ VkShaderModule create_shader_module(const char* filename, shaderc_shader_kind ki
     return shader_module;
 }
 
-Pipeline create_pipeline(VkGraphicsPipelineCreateInfo* p_info, VkPipeline* p_pl) {
-    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, p_info, NULL, p_pl));
+Pipeline create_pipeline(VkGraphicsPipelineCreateInfo* info, VkPipeline* pl) {
+    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, info, NULL, pl));
     return (Pipeline) {
-        .p_info = p_info,
-        .p_pl = p_pl
+        .info = info,
+        .pl = pl
     };
+}
+
+void change_shader(Pipeline* pipeline, const char* filename, shaderc_shader_kind kind, Arena* arena) {
+    size_t stage_index;
+    switch (kind) {
+        case shaderc_glsl_vertex_shader:
+            stage_index = 0;
+            break;
+        case shaderc_glsl_fragment_shader:
+            stage_index = 1;
+            break;
+        default:
+            fatal("change_shader: can't handle shader kind.");
+    }
+    VkShaderModule module = create_shader_module(filename, kind);
+    if (module == VK_NULL_HANDLE) {
+        return;
+    }
+
+    vkQueueWaitIdle(vkg.queue);
+    vkDestroyPipeline(vkg.device, *(pipeline->pl), NULL);
+    vkDestroyShaderModule(vkg.device, pipeline->info->pStages[stage_index].module, NULL);
+
+    size_t stages_size = sizeof(VkPipelineShaderStageCreateInfo) * 2;
+    VkPipelineShaderStageCreateInfo* new_stages = arena_alloc(arena, stages_size);
+    memcpy(new_stages, pipeline->info->pStages, stages_size);
+    new_stages[stage_index].module = module;
+    pipeline->info->pStages = new_stages;
+    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, pipeline->info, NULL, pipeline->pl));
+}
+
+void destroy_pipeline(Pipeline* pipeline) {
+    vkDestroyPipeline(vkg.device, *(pipeline->pl), NULL);
+    for (int i=0; i < pipeline->info->stageCount; i++) {
+        vkDestroyShaderModule(vkg.device, pipeline->info->pStages[i].module, NULL);
+    }
 }
 
 int get_format_pixel_size(VkFormat format) {
