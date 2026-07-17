@@ -33,8 +33,8 @@ typedef struct VmaAllocatedBuffer {
 } VmaAllocatedBuffer;
 
 typedef struct Pipeline {
-    VkGraphicsPipelineCreateInfo* const info;
-    VkPipeline* const pl;
+    VkGraphicsPipelineCreateInfo info;
+    VkPipeline pl;
 } Pipeline;
 
 static inline void chk(VkResult result) {
@@ -75,12 +75,9 @@ VkShaderModule create_shader_module(const char* filename, shaderc_shader_kind ki
     return shader_module;
 }
 
-Pipeline create_pipeline(VkGraphicsPipelineCreateInfo* info, VkPipeline* pl) {
-    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, info, NULL, pl));
-    return (Pipeline) {
-        .info = info,
-        .pl = pl
-    };
+// Requires pipeline->info to be filled out
+void pipeline_init(Pipeline* pipeline) {
+    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, &pipeline->info, NULL, &pipeline->pl));
 }
 
 void change_shader(Pipeline* pipeline, const char* filename, shaderc_shader_kind kind, Arena* arena) {
@@ -101,21 +98,21 @@ void change_shader(Pipeline* pipeline, const char* filename, shaderc_shader_kind
     }
 
     vkQueueWaitIdle(vkg.queue);
-    vkDestroyPipeline(vkg.device, *(pipeline->pl), NULL);
-    vkDestroyShaderModule(vkg.device, pipeline->info->pStages[stage_index].module, NULL);
+    vkDestroyPipeline(vkg.device, pipeline->pl, NULL);
+    vkDestroyShaderModule(vkg.device, pipeline->info.pStages[stage_index].module, NULL);
 
     size_t stages_size = sizeof(VkPipelineShaderStageCreateInfo) * 2;
     VkPipelineShaderStageCreateInfo* new_stages = arena_alloc(arena, stages_size);
-    memcpy(new_stages, pipeline->info->pStages, stages_size);
+    memcpy(new_stages, pipeline->info.pStages, stages_size);
     new_stages[stage_index].module = module;
-    pipeline->info->pStages = new_stages;
-    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, pipeline->info, NULL, pipeline->pl));
+    pipeline->info.pStages = new_stages;
+    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, &pipeline->info, NULL, &pipeline->pl));
 }
 
 void destroy_pipeline(Pipeline* pipeline) {
-    vkDestroyPipeline(vkg.device, *(pipeline->pl), NULL);
-    for (int i=0; i < pipeline->info->stageCount; i++) {
-        vkDestroyShaderModule(vkg.device, pipeline->info->pStages[i].module, NULL);
+    vkDestroyPipeline(vkg.device, pipeline->pl, NULL);
+    for (int i=0; i < pipeline->info.stageCount; i++) {
+        vkDestroyShaderModule(vkg.device, pipeline->info.pStages[i].module, NULL);
     }
 }
 

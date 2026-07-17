@@ -55,7 +55,6 @@ struct State {
     VkDescriptorSetLayout desc_set_layout;
     VkDescriptorSet desc_set;
     VkPipelineLayout pipeline_layout;
-    VkPipeline vk_pipeline;
     u32 image_index;
     bool update_swapchain;
     vec3 cam_pos;
@@ -310,7 +309,7 @@ int main() {
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
         .cullMode = VK_CULL_MODE_NONE,
     };
-    VkGraphicsPipelineCreateInfo pipeline_ci = {
+    Pipeline pipeline = { .info = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &rendering_ci,
         .stageCount = 2,
@@ -323,8 +322,9 @@ int main() {
         .pDepthStencilState = &depth_stencil_state,
         .pColorBlendState = &color_blend_state,
         .pDynamicState = &dynamic_state,
-        .layout = st.pipeline_layout};
-    Pipeline pipeline = create_pipeline(&pipeline_ci, &st.vk_pipeline);
+        .layout = st.pipeline_layout}
+    };
+    pipeline_init(&pipeline);
 
     VkDescriptorPoolSize pool_size = {
         .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -463,7 +463,7 @@ int main() {
                 .height = (u32)(st.window_h)
             }
         };
-        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, st.vk_pipeline);
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pl);
         vkCmdSetScissor(cb, 0, 1, &scissor);
         vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, st.pipeline_layout, 0, 1, &st.desc_set, 0, NULL);
         vkCmdDraw(cb, 3, 1, 0, 0);

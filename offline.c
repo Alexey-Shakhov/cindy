@@ -204,22 +204,24 @@ int main() {
         .colorAttachmentCount = 2,
         .pColorAttachmentFormats = color_attachment_formats,
         .depthAttachmentFormat = depth_att.format};
-    VkGraphicsPipelineCreateInfo pipeline_ci = {
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = &rendering_ci,
-        .stageCount = 2,
-        .pStages = shader_stages,
-        .pVertexInputState = &vertex_input_state,
-        .pInputAssemblyState = &input_assembly_state,
-        .pViewportState = &viewport_state,
-        .pRasterizationState = &rasterization_state,
-        .pMultisampleState = &multisample_state,
-        .pDepthStencilState = &depth_stencil_state,
-        .pColorBlendState = &color_blend_state,
-        .pDynamicState = &dynamic_state,
-        .layout = pipeline_layout};
-    VkPipeline vk_pipeline;
-    Pipeline pipeline = create_pipeline(&pipeline_ci, &vk_pipeline);
+    Pipeline pipeline = { .info = 
+        {
+           .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+           .pNext = &rendering_ci,
+           .stageCount = 2,
+           .pStages = shader_stages,
+           .pVertexInputState = &vertex_input_state,
+           .pInputAssemblyState = &input_assembly_state,
+           .pViewportState = &viewport_state,
+           .pRasterizationState = &rasterization_state,
+           .pMultisampleState = &multisample_state,
+           .pDepthStencilState = &depth_stencil_state,
+           .pColorBlendState = &color_blend_state,
+           .pDynamicState = &dynamic_state,
+           .layout = pipeline_layout
+        }
+    };
+    pipeline_init(&pipeline);
 
     chk(vkResetCommandBuffer(cb, 0));
     VkCommandBufferBeginInfo cb_bi = {
@@ -287,7 +289,7 @@ int main() {
     };
     vkCmdSetViewport(cb, 0, 1, &vp);
     VkRect2D scissor = {.extent = {.width = (u32)(image_width), .height = (u32)(image_height)}};
-    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pl);
     vkCmdSetScissor(cb, 0, 1, &scissor);
 
     SceneUniforms uniforms;
