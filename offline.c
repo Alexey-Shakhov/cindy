@@ -306,7 +306,7 @@ int main() {
     vec3 center = {0.0f, 0.0f, 0.0f};
     vec3 up = {0.0f, 1.0f, 0.0f};
     glm_lookat(eye, center, up, uniforms.view);
-    glm_ortho(-0.25f, 0.25f, -0.25f, 0.25f, 1.0f, 100.0f, uniforms.proj);
+    glm_ortho(-0.1f, 0.1f, -0.1f, 0.1f, 1.0f, 100.0f, uniforms.proj);
     memcpy(shader_data_buffer.alloc_info.pMappedData, &uniforms, sizeof(SceneUniforms));
 
     VkDeviceSize vert_offset = 0;
