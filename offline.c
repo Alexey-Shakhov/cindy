@@ -79,7 +79,7 @@ void save_texture(
 }
 
 int main() {
-    memory_init(MBS(128), KBS(16));
+    memory_init(MBS(32), KBS(16));
 
     VmaAllocatedBuffer shader_data_buffer;
     VkCommandBuffer cb;
@@ -396,6 +396,7 @@ int main() {
     vmaDestroyBuffer(vkg.vma, vibuf.buffer, vibuf.alloc);
 
     vkg_shutdown();
+    arena_report(&memory.total); arena_report(&memory.scratch);
     memory_shutdown();
 
     return 0;

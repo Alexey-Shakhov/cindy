@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #define MEM_ALIGNMENT 8
 
@@ -10,6 +12,8 @@ typedef struct Arena {
     uint8_t* buffer;
     size_t capacity;
     size_t offset;
+    size_t peak_used;
+    char name[16];
 } Arena;
 
 typedef struct Marker {
@@ -33,10 +37,15 @@ void* arena_alloc(Arena* arena, size_t amount) {
         fatal("Arena out of memory.");
     }
     arena->offset = new_offset;
+
+    if (new_offset > arena->peak_used) {
+        arena->peak_used = new_offset;
+    }
+
     return (void*) aligned;
 }
 
-Arena arena_init(Arena* arena, size_t capacity) {
+Arena arena_init(Arena* arena, size_t capacity, const char* name) {
     uint8_t* buf;
     if (arena) {
         buf = arena_alloc(arena, capacity);
@@ -46,11 +55,14 @@ Arena arena_init(Arena* arena, size_t capacity) {
     if (!buf) {
         fatal("Failed to allocate arena memory.");
     }
-    return (Arena) {
+    Arena a =  {
         .buffer = buf,
         .capacity = capacity,
-        .offset = 0
+        .offset = 0,
+        .peak_used = 0
     };
+    strcpy(a.name, name);
+    return a;
 }
 
 void arena_reset(Arena* arena) {
@@ -59,6 +71,13 @@ void arena_reset(Arena* arena) {
 
 void arena_free(Arena* arena) {
     free(arena->buffer);
+}
+
+void arena_report(const Arena* arena) {
+    printf("Peak %s usage: %f MBs out of %.3f MBs\n",
+            arena->name,
+            (float) arena->peak_used / 1024 / 1024,
+            (float) arena->capacity / 1024 / 1024);
 }
 
 Marker marker_new(Arena* arena) {
@@ -77,8 +96,8 @@ void marker_reset(const Marker marker) {
 }
 
 void memory_init(size_t total_size, size_t scratch_size) {
-    memory.total = arena_init(NULL, total_size);
-    memory.scratch = arena_init(&memory.total, scratch_size);
+    memory.total = arena_init(NULL, total_size, "total");
+    memory.scratch = arena_init(&memory.total, scratch_size, "scratch");
 }
 
 void memory_shutdown() {

@@ -163,7 +163,7 @@ VkSwapchainKHR create_swapchain_with_views(
 
 int main() {
     memory_init(MBS(256), MBS(1));
-    g_perm = arena_init(&memory.total, MBS(256 - 1));
+    g_perm = arena_init(&memory.total, MBS(256 - 1), "permanent");
     // TODO create state_defaults_init function
     st.cam_pos[0] = 0.0f;
     st.cam_pos[1] = 0.0f;
@@ -577,6 +577,8 @@ int main() {
     glfwDestroyWindow(st.window);
     glfwTerminate();
 
+    arena_report(&memory.scratch);
+    arena_report(&g_perm);
     memory_shutdown();
 
     return 0;
