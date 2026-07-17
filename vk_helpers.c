@@ -7,7 +7,7 @@ struct {
     VkPhysicalDevice physical_device;
     VkDevice device;
     VkQueue queue;
-    uint32_t queue_fam;
+    u32 queue_fam;
     VmaAllocator vma;
     VkCommandPool command_pool;
 } vkg;
@@ -61,7 +61,7 @@ VkShaderModule create_shader_module(const char* filename, shaderc_shader_kind ki
         return VK_NULL_HANDLE;
     }
 
-    uint32_t* spirv = (uint32_t*) shaderc_result_get_bytes(result);
+    u32* spirv = (u32*) shaderc_result_get_bytes(result);
     size_t spirv_size = shaderc_result_get_length(result);
     VkShaderModuleCreateInfo shader_module_ci = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -142,7 +142,7 @@ void destroy_texture(Texture* tex) {
     vkDestroySampler(vkg.device, tex->sampler, NULL);
 }
 
-VkInstance create_instance(uint32_t extension_count, const char* const * extensions) {
+VkInstance create_instance(u32 extension_count, const char* const * extensions) {
     VkApplicationInfo app_info = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                                   .pApplicationName = "Cindy",
                                   .apiVersion = VK_API_VERSION_1_4};
@@ -161,7 +161,7 @@ VkInstance create_instance(uint32_t extension_count, const char* const * extensi
 
 VkPhysicalDevice choose_physical_device() {
     VkInstance instance = vkg.instance;
-    uint32_t dev_count;
+    u32 dev_count;
     vkEnumeratePhysicalDevices(instance, &dev_count, NULL);
     VkPhysicalDevice *devices = arena_alloc(&memory.scratch, sizeof(VkPhysicalDevice) * dev_count);
     vkEnumeratePhysicalDevices(instance, &dev_count, devices);
@@ -181,18 +181,18 @@ VkPhysicalDevice choose_physical_device() {
     return chosen_dev;
 }
 
-uint32_t choose_queue_family() {
+u32 choose_queue_family() {
     VkInstance instance = vkg.instance;
     VkPhysicalDevice physical_device = vkg.physical_device;
 
-    uint32_t queue_family_count = 0;
+    u32 queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
                                              NULL);
     VkQueueFamilyProperties *queue_families =
         arena_alloc(&memory.scratch, sizeof(VkQueueFamilyProperties) * queue_family_count);
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count,
                                              queue_families);
-    uint32_t chosen_queue_fam = 0;
+    u32 chosen_queue_fam = 0;
     for (int i = 0; i < queue_family_count; i++) {
         if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             chosen_queue_fam = i;
@@ -203,10 +203,10 @@ uint32_t choose_queue_family() {
     return chosen_queue_fam;
 }
 
-VkDevice create_logical_device(uint32_t extension_count, const char* const * extensions) {
+VkDevice create_logical_device(u32 extension_count, const char* const * extensions) {
     VkInstance instance = vkg.instance;
     VkPhysicalDevice physical_device = vkg.physical_device;
-    uint32_t queue_family = vkg.queue_fam;
+    u32 queue_family = vkg.queue_fam;
 
     const float queue_fam_priority = 1.0f;
     VkDeviceQueueCreateInfo queue_ci = {
@@ -282,8 +282,8 @@ VkImage create_vkimage(
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = format,
-        .extent = {.width = (uint32_t)width,
-                   .height = (uint32_t)height,
+        .extent = {.width = (u32)width,
+                   .height = (u32)height,
                    .depth = 1},
         .mipLevels = 1,
         .arrayLayers = 1,
@@ -348,8 +348,8 @@ VkCommandPool create_command_pool() {
     return command_pool;
 }
 
-void vkg_init(uint32_t dev_ext_count, const char** dev_extensions,
-        uint32_t inst_ext_count, const char** instance_extensions)
+void vkg_init(u32 dev_ext_count, const char** dev_extensions,
+        u32 inst_ext_count, const char** instance_extensions)
 {
     Marker mem = marker_new(&memory.scratch);
 
@@ -460,7 +460,7 @@ void transition_image_layout(
     vkCmdPipelineBarrier2(cmdbuffer, &barrier_dependency_info);
 }
 
-VkImageCopy create_image_copy(VkImageAspectFlags aspect_mask, uint32_t width, uint32_t height) {
+VkImageCopy create_image_copy(VkImageAspectFlags aspect_mask, u32 width, u32 height) {
     VkImageCopy copy = {
         .srcSubresource.aspectMask = aspect_mask,
         .srcSubresource.layerCount = 1,

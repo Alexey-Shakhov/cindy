@@ -10,7 +10,7 @@
 #include "cglm/struct.h"
 
 #include "decls.h"
-
+#include "typedefs.c"
 #include "memory.c"
 #include "utils.c"
 #include "vk_helpers.c"
@@ -35,7 +35,7 @@ struct State {
 
     VkSwapchainKHR swapchain;
     VkExtent2D swapchain_extent;
-    uint32_t swapchain_image_count;
+    u32 swapchain_image_count;
     VkImage* swapchain_images;
     VkImageView *swapchain_image_views;
 
@@ -48,14 +48,14 @@ struct State {
     VkSemaphore image_acquired_semaphores[MAX_FRAMES_IN_FLIGHT];
     VkFence fences[MAX_FRAMES_IN_FLIGHT];
     VkSemaphore *render_complete_semaphores;
-    uint32_t frame_index;
+    u32 frame_index;
     VkCommandBuffer command_buffers[MAX_FRAMES_IN_FLIGHT];
     VkDescriptorPool descriptor_pool;
     VkDescriptorSetLayout desc_set_layout;
     VkDescriptorSet desc_set;
     VkPipelineLayout pipeline_layout;
     VkPipeline vk_pipeline;
-    uint32_t image_index;
+    u32 image_index;
     bool update_swapchain;
     vec3 cam_pos;
 } st = {0};
@@ -105,7 +105,7 @@ VkSwapchainKHR create_swapchain_with_views(
         VkSurfaceKHR surface,
         int window_w,
         int window_h,
-        uint32_t* p_image_count,
+        u32* p_image_count,
         VkImage** p_images,
         VkImageView** p_image_views,
         VkExtent2D* p_extent,
@@ -120,7 +120,7 @@ VkSwapchainKHR create_swapchain_with_views(
     *p_extent = surface_capabilities.currentExtent;
     // Handle Wayland
     if (surface_capabilities.currentExtent.width == 0xFFFFFFFF) {
-        *p_extent = (VkExtent2D) {.width = (uint32_t)window_w, .height = (uint32_t)window_h};
+        *p_extent = (VkExtent2D) {.width = (u32)window_w, .height = (u32)window_h};
     }
 
     VkSwapchainCreateInfoKHR swapchain_ci = {
@@ -173,7 +173,7 @@ int main() {
     glfwGetWindowSize(st.window, &st.window_w, &st.window_h);
 
     const char* dev_extensions[1] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-    uint32_t ext_count;
+    u32 ext_count;
     const char** extensions = glfwGetRequiredInstanceExtensions(&ext_count);
     vkg_init(1, dev_extensions, ext_count, extensions);
 
@@ -444,8 +444,8 @@ int main() {
 
         VkRenderingInfo renderingInfo = {
             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-            .renderArea = {.extent = {.width = (uint32_t)(st.window_w),
-                                      .height = (uint32_t)(st.window_h)}},
+            .renderArea = {.extent = {.width = (u32)(st.window_w),
+                                      .height = (u32)(st.window_h)}},
             .layerCount = 1,
             .colorAttachmentCount = 1,
             .pColorAttachments = &color_attachment_info,
@@ -458,8 +458,8 @@ int main() {
         vkCmdSetViewport(cb, 0, 1, &vp);
         VkRect2D scissor = {
             .extent = {
-                .width = (uint32_t)(st.window_w),
-                .height = (uint32_t)(st.window_h)
+                .width = (u32)(st.window_w),
+                .height = (u32)(st.window_h)
             }
         };
         vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, st.vk_pipeline);

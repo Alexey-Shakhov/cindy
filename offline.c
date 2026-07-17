@@ -9,7 +9,7 @@
 #include "cglm/struct.h"
 
 #include "decls.h"
-
+#include "typedefs.c"
 #include "memory.c"
 #include "utils.c"
 #include "vk_helpers.c"
@@ -22,7 +22,7 @@ typedef struct SceneUniforms {
 
 typedef struct PushConstants {
     mat4 model;
-    uint32_t object_id;
+    u32 object_id;
     VkDeviceAddress scene_uniforms;
 } PushConstants;
 
@@ -269,8 +269,8 @@ int main() {
 
     VkRenderingInfo renderingInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea = {.extent = {.width = (uint32_t)(image_width),
-                                  .height = (uint32_t)(image_height)}},
+        .renderArea = {.extent = {.width = (u32)(image_width),
+                                  .height = (u32)(image_height)}},
         .layerCount = 1,
         .colorAttachmentCount = 2,
         .pColorAttachments = color_attachment_infos,
@@ -285,7 +285,7 @@ int main() {
         .maxDepth = 1.0f
     };
     vkCmdSetViewport(cb, 0, 1, &vp);
-    VkRect2D scissor = {.extent = {.width = (uint32_t)(image_width), .height = (uint32_t)(image_height)}};
+    VkRect2D scissor = {.extent = {.width = (u32)(image_width), .height = (u32)(image_height)}};
     vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline);
     vkCmdSetScissor(cb, 0, 1, &scissor);
 

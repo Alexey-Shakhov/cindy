@@ -9,7 +9,7 @@
 #define GBS(n) (1024*1024*1024*(n))
 
 typedef struct Arena {
-    uint8_t* buffer;
+    u8* buffer;
     size_t capacity;
     size_t offset;
     size_t peak_used;
@@ -46,7 +46,7 @@ void* arena_alloc(Arena* arena, size_t amount) {
 }
 
 Arena arena_init(Arena* arena, size_t capacity, const char* name) {
-    uint8_t* buf;
+    u8* buf;
     if (arena) {
         buf = arena_alloc(arena, capacity);
     } else {

@@ -4,18 +4,18 @@
 #include "cgltf.h"
 
 typedef struct Primitive {
-    // uint32_t texture_id;
-    uint32_t index_offset;
-    uint32_t index_count;
+    // u32 texture_id;
+    u32 index_offset;
+    u32 index_count;
 } Primitive;
 
 typedef struct Mesh {
     Primitive* primitives;
-    uint32_t primitives_count;
+    u32 primitives_count;
 } Mesh;
 
 typedef struct Node {
-    uint32_t index;
+    u32 index;
     int parent_index;
     Mesh* mesh;
 
@@ -31,7 +31,7 @@ typedef struct Vertex {
     vec3 normal;
 } Vertex;
 
-typedef uint32_t vert_index;
+typedef u32 vert_index;
 
 typedef struct Scene {
     Mesh* meshes;
