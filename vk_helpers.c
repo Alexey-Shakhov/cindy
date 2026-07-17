@@ -1,6 +1,6 @@
 const VkFormat DEPTH_MAP_FORMAT = VK_FORMAT_D32_SFLOAT;
 
-typedef struct VulkanGlobals {
+struct {
     VkInstance instance;
     VkPhysicalDevice physical_device;
     VkDevice device;
@@ -8,9 +8,7 @@ typedef struct VulkanGlobals {
     uint32_t queue_fam;
     VmaAllocator vma;
     VkCommandPool command_pool;
-} VulkanGlobals;
-
-VulkanGlobals vkg;
+} vkg;
 
 typedef struct Image {
     VkImage image;
@@ -19,16 +17,18 @@ typedef struct Image {
     VkFormat format;
 } Image;
 
-void destroy_image(Image* img) {
-    vkDestroyImageView(vkg.device, img->view, NULL);
-    vmaDestroyImage(vkg.vma, img->image, img->alloc);
-}
-
 typedef struct Texture {
     Image img;
     VkSampler sampler;
     VkDescriptorImageInfo desc_info;
 } Texture;
+
+typedef struct VmaAllocatedBuffer {
+    VkBuffer buffer;
+    VmaAllocation alloc;
+    VmaAllocationInfo alloc_info;
+    VkDeviceAddress device_address;
+} VmaAllocatedBuffer;
 
 int get_format_pixel_size(VkFormat format) {
     switch (format) {
@@ -43,17 +43,15 @@ int get_format_pixel_size(VkFormat format) {
     }
 }
 
+void destroy_image(Image* img) {
+    vkDestroyImageView(vkg.device, img->view, NULL);
+    vmaDestroyImage(vkg.vma, img->image, img->alloc);
+}
+
 void destroy_texture(Texture* tex) {
     destroy_image(&tex->img);
     vkDestroySampler(vkg.device, tex->sampler, NULL);
 }
-
-typedef struct VmaAllocatedBuffer {
-    VkBuffer buffer;
-    VmaAllocation alloc;
-    VmaAllocationInfo alloc_info;
-    VkDeviceAddress device_address;
-} VmaAllocatedBuffer;
 
 static inline void chk(VkResult result) {
     if (result != VK_SUCCESS) {
