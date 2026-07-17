@@ -51,6 +51,7 @@ Arena arena_init(Arena* arena, size_t capacity, const char* name) {
         buf = arena_alloc(arena, capacity);
     } else {
         buf = malloc(capacity);
+        memset(buf, 0, capacity);
     }
     if (!buf) {
         fatal("Failed to allocate arena memory.");

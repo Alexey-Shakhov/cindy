@@ -177,7 +177,6 @@ Scene load_gltf_scene(const char* filename, Arena* arena) {
     cgltf_node* gltf_nodes = gltf_data->nodes;
     scene.node_count = gltf_data->nodes_count;
     scene.nodes = arena_alloc(arena, sizeof(Node) * scene.node_count);
-    memset(scene.nodes, 0, sizeof(Node) * scene.node_count);
 
     for (size_t n=0; n < scene.node_count; n++) {
         Node* node = &scene.nodes[n];
