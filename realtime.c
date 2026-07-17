@@ -227,18 +227,7 @@ int main() {
         fatal("Failed to allocate command buffers.");
     }
 
-    size_t code_size = 0;
-    uint32_t* spirv;
-    if (read_binary_file("shaders/realtime.spirv", (char**) &spirv, &code_size, &memory.scratch)) {
-        fatal("Failed to read shader SPIR-V.");
-    }
-    VkShaderModuleCreateInfo shader_module_ci = {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = code_size,
-        .pCode = spirv,
-    };
-    VkShaderModule shader_module;
-    chk(vkCreateShaderModule(vkg.device, &shader_module_ci, NULL, &shader_module));
+    VkShaderModule shader_module = create_shader_module("shaders/realtime.spirv");
 
     VkDescriptorSetLayoutBinding bindings[3];
     for (int i=0; i < 3; i++) {

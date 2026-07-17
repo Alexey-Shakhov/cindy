@@ -30,6 +30,45 @@ typedef struct VmaAllocatedBuffer {
     VkDeviceAddress device_address;
 } VmaAllocatedBuffer;
 
+typedef struct Pipeline {
+    VkGraphicsPipelineCreateInfo* const p_info;
+    VkPipeline* const p_pl;
+} Pipeline;
+
+static inline void chk(VkResult result) {
+    if (result != VK_SUCCESS) {
+        fprintf(stderr, "Vulkan error. Code: %s.\n", string_VkResult(result));
+        exit(EXIT_FAILURE);
+    }
+}
+
+VkShaderModule create_shader_module(const char* filename) {
+    size_t code_size = 0;
+    uint32_t* spirv;
+    Marker m = marker_new(&memory.scratch);
+    if (read_binary_file(filename, (char**) &spirv, &code_size, &memory.scratch)) {
+        fatal("Failed to read shader SPIR-V.");
+    }
+    VkShaderModuleCreateInfo shader_module_ci = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = code_size,
+        .pCode = spirv,
+    };
+    VkShaderModule shader_module;
+    chk(vkCreateShaderModule(vkg.device, &shader_module_ci, NULL, &shader_module));
+
+    marker_reset(m);
+    return shader_module;
+}
+
+Pipeline create_pipeline(VkGraphicsPipelineCreateInfo* p_info, VkPipeline* p_pl) {
+    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, p_info, NULL, p_pl));
+    return (Pipeline) {
+        .p_info = p_info,
+        .p_pl = p_pl
+    };
+}
+
 int get_format_pixel_size(VkFormat format) {
     switch (format) {
         case VK_FORMAT_B8G8R8A8_UNORM:
@@ -51,13 +90,6 @@ void destroy_image(Image* img) {
 void destroy_texture(Texture* tex) {
     destroy_image(&tex->img);
     vkDestroySampler(vkg.device, tex->sampler, NULL);
-}
-
-static inline void chk(VkResult result) {
-    if (result != VK_SUCCESS) {
-        fprintf(stderr, "Vulkan error. Code: %s.\n", string_VkResult(result));
-        exit(EXIT_FAILURE);
-    }
 }
 
 VkInstance create_instance(uint32_t extension_count, const char* const * extensions) {

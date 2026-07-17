@@ -84,7 +84,6 @@ int main() {
     VmaAllocatedBuffer shader_data_buffer;
     VkCommandBuffer cb;
     VkPipelineLayout pipeline_layout;
-    VkPipeline pipeline;
 
     vkg_init(0, NULL, 0, NULL);
 
@@ -118,19 +117,7 @@ int main() {
 
     cb = allocate_command_buffer();
 
-    size_t code_size = 0;
-    uint32_t* spirv;
-
-    if (read_binary_file("shaders/bake.spirv", (char**) &spirv, &code_size, &memory.scratch)) {
-        fatal("Failed to read shader SPIR-V.");
-    }
-    VkShaderModuleCreateInfo shader_module_ci = {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = code_size,
-        .pCode = spirv,
-    };
-    VkShaderModule shader_module;
-    chk(vkCreateShaderModule(vkg.device, &shader_module_ci, NULL, &shader_module));
+    VkShaderModule shader_module = create_shader_module("shaders/bake.spirv");
 
     VkPushConstantRange push_constant_range = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT ,
@@ -229,7 +216,8 @@ int main() {
         .pColorBlendState = &color_blend_state,
         .pDynamicState = &dynamic_state,
         .layout = pipeline_layout};
-    chk(vkCreateGraphicsPipelines(vkg.device, VK_NULL_HANDLE, 1, &pipeline_ci, NULL, &pipeline));
+    VkPipeline vk_pipeline;
+    Pipeline pipeline = create_pipeline(&pipeline_ci, &vk_pipeline);
 
     chk(vkResetCommandBuffer(cb, 0));
     VkCommandBufferBeginInfo cb_bi = {
@@ -297,7 +285,7 @@ int main() {
     };
     vkCmdSetViewport(cb, 0, 1, &vp);
     VkRect2D scissor = {.extent = {.width = (uint32_t)(image_width), .height = (uint32_t)(image_height)}};
-    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline);
     vkCmdSetScissor(cb, 0, 1, &scissor);
 
     SceneUniforms uniforms;
@@ -384,7 +372,7 @@ int main() {
 
     chk(vkDeviceWaitIdle(vkg.device));
 
-    vkDestroyPipeline(vkg.device, pipeline, NULL);
+    vkDestroyPipeline(vkg.device, vk_pipeline, NULL);
     vkDestroyPipelineLayout(vkg.device, pipeline_layout, NULL);
     vkDestroyShaderModule(vkg.device, shader_module, NULL);
     vmaDestroyBuffer(vkg.vma, shader_data_buffer.buffer, shader_data_buffer.alloc);
