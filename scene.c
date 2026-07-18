@@ -39,10 +39,9 @@ typedef struct Scene {
     Node* nodes;
     size_t node_count;
 
-    Vertex* vertices;
     size_t vertex_count;
-    vert_index* indices;
     size_t index_count;
+    VmaAllocatedBuffer vibuf;
 } Scene;
 
 void node_make_matrix(Node* node)
@@ -53,10 +52,18 @@ void node_make_matrix(Node* node)
     glm_scale(node->matrix, node->scale);
     node->has_matrix = true;
 }
+
+void node_global_matrix(Scene* scene, Node* node, mat4 dest) {
+    glm_mat4_copy(node->matrix, dest);
+    Node* current = node;
+    while (current->parent_index >= 0) {
+        current = &scene->nodes[current->parent_index];
+        glm_mat4_mul(current->matrix, dest, dest);
+    }
+}
  
 Scene load_gltf_scene(const char* filename, Arena* arena) {
     Scene scene = {0};
-    // Open the file
     cgltf_options gltf_options = {0};
     cgltf_data* gltf_data;
     cgltf_result gltf_result = cgltf_parse_file(&gltf_options, filename, &gltf_data);
@@ -93,9 +100,10 @@ Scene load_gltf_scene(const char* filename, Arena* arena) {
         }
     }
 
-    scene.vertices = arena_alloc(arena, vertex_count * sizeof(Vertex));
+    Marker temp = marker_new(&memory.scratch);
+    Vertex* vertices = arena_alloc(&memory.scratch, vertex_count * sizeof(Vertex));
     scene.vertex_count = vertex_count;
-    scene.indices = arena_alloc(arena, index_count * sizeof(vert_index));
+    vert_index* indices = arena_alloc(&memory.scratch, index_count * sizeof(vert_index));
     scene.index_count = index_count;
 
     size_t index_offset = 0;
@@ -129,9 +137,9 @@ Scene load_gltf_scene(const char* filename, Arena* arena) {
                 if (attribute->type == cgltf_attribute_type_position) {
                     for (size_t v=0; v < count; v++) {
                         vec3* pos = (vec3*) data;
-                        scene.vertices[vertex_offset + v].pos[0] = (*pos)[0];
-                        scene.vertices[vertex_offset + v].pos[1] = (*pos)[1];
-                        scene.vertices[vertex_offset + v].pos[2] = (*pos)[2];
+                        vertices[vertex_offset + v].pos[0] = (*pos)[0];
+                        vertices[vertex_offset + v].pos[1] = (*pos)[1];
+                        vertices[vertex_offset + v].pos[2] = (*pos)[2];
                         data += stride;
                     }
                     primitive_vertex_count = count;
@@ -140,9 +148,9 @@ Scene load_gltf_scene(const char* filename, Arena* arena) {
                 if (attribute->type == cgltf_attribute_type_normal) {
                     for (size_t v=0; v < count; v++) {
                         vec3* normal = (vec3*) data;
-                        scene.vertices[vertex_offset + v].normal[0] = (*normal)[0];
-                        scene.vertices[vertex_offset + v].normal[1] = (*normal)[1];
-                        scene.vertices[vertex_offset + v].normal[2] = (*normal)[2];
+                        vertices[vertex_offset + v].normal[0] = (*normal)[0];
+                        vertices[vertex_offset + v].normal[1] = (*normal)[1];
+                        vertices[vertex_offset + v].normal[2] = (*normal)[2];
                         data += stride;
                     }
                 }
@@ -151,8 +159,8 @@ Scene load_gltf_scene(const char* filename, Arena* arena) {
                 if (attribute->type == cgltf_attribute_type_texcoord) {
                     for (size_t v=0; v < count; v++) {
                         vec2* texcoord = (vec2*) data;
-                        scene.vertices[vertex_offset + v].tex_coord[0] = (*texcoord)[0];
-                        scene.vertices[vertex_offset + v].tex_coord[1] = (*texcoord)[1];
+                        vertices[vertex_offset + v].tex_coord[0] = (*texcoord)[0];
+                        vertices[vertex_offset + v].tex_coord[1] = (*texcoord)[1];
                         data += stride;
                     }
                 }
@@ -165,7 +173,7 @@ Scene load_gltf_scene(const char* filename, Arena* arena) {
             mesh->primitives[p].index_count = index_accessor->count;
             
             for (size_t i=0; i < index_accessor->count; i++) {
-                scene.indices[index_offset + i] = cgltf_accessor_read_index(index_accessor, i) + vertex_offset;
+                indices[index_offset + i] = cgltf_accessor_read_index(index_accessor, i) + vertex_offset;
             }
 
             vertex_offset += primitive_vertex_count;
@@ -224,6 +232,18 @@ Scene load_gltf_scene(const char* filename, Arena* arena) {
             node_make_matrix(&scene.nodes[i]);
         }
     }
-    
+
+    VkDeviceSize vbuf_size = sizeof(Vertex) * scene.vertex_count;
+    VkDeviceSize ibuf_size = sizeof(vert_index) * scene.index_count;
+    VmaAllocatedBuffer vibuf = allocate_buffer(
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT, ibuf_size + vbuf_size);
+    memcpy(vibuf.alloc_info.pMappedData, vertices, vbuf_size);
+    memcpy((char *)vibuf.alloc_info.pMappedData + vbuf_size, indices, ibuf_size);
+    scene.vibuf = vibuf;
+    marker_reset(temp);
+
     return scene;
 }

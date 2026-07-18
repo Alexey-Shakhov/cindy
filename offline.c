@@ -80,7 +80,7 @@ void save_texture(
 }
 
 int main() {
-    memory_init(MBS(32), KBS(16));
+    memory_init(MBS(256), MBS(32));
 
     VmaAllocatedBuffer shader_data_buffer;
     VkCommandBuffer cb;
@@ -99,17 +99,6 @@ int main() {
             VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_ASPECT_COLOR_BIT, image_width, image_height, false);
 
     Scene scene = load_gltf_scene("../assets/teacup.glb", &memory.total);
-
-    VkDeviceSize vbuf_size = sizeof(Vertex) * scene.vertex_count;
-    VkDeviceSize ibuf_size = sizeof(vert_index) * scene.index_count;
-    VmaAllocatedBuffer vibuf = allocate_buffer(
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT, ibuf_size + vbuf_size);
-
-    memcpy(vibuf.alloc_info.pMappedData, scene.vertices, vbuf_size);
-    memcpy((char *)vibuf.alloc_info.pMappedData + vbuf_size, scene.indices, ibuf_size);
 
     shader_data_buffer = allocate_buffer(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
@@ -302,7 +291,7 @@ int main() {
     memcpy(shader_data_buffer.alloc_info.pMappedData, &uniforms, sizeof(SceneUniforms));
 
     VkDeviceSize vert_offset = 0;
-    vkCmdBindVertexBuffers(cb, 0, 1, &vibuf.buffer, &vert_offset);
+    vkCmdBindVertexBuffers(cb, 0, 1, &scene.vibuf.buffer, &vert_offset);
     for (int i=0; i < scene.node_count; i++) {
         Node* node = &scene.nodes[i];
         PushConstants pc = {
@@ -311,18 +300,14 @@ int main() {
             .scene_uniforms = shader_data_buffer.device_address,
         };
 
-        glm_mat4_copy(node->matrix, pc.model);
-        Node* current = node;
-        while (current->parent_index >= 0) {
-            current = &scene.nodes[current->parent_index];
-            glm_mat4_mul(current->matrix, pc.model, pc.model);
-        }
+        node_global_matrix(&scene, node, pc.model);
 
         Mesh* mesh = node->mesh;
         assert(mesh);
         for (int p=0; p < mesh->primitives_count; p++) {
             Primitive* primitive = &mesh->primitives[p];
-            vkCmdBindIndexBuffer2(cb, vibuf.buffer, vbuf_size + (primitive->index_offset) * sizeof(vert_index),
+            VkDeviceSize vbuf_size = scene.vertex_count * sizeof(Vertex);
+            vkCmdBindIndexBuffer2(cb, scene.vibuf.buffer, vbuf_size + (primitive->index_offset) * sizeof(vert_index),
                     primitive->index_count * sizeof(vert_index), VK_INDEX_TYPE_UINT32);
             vkCmdPushConstants(cb, pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                sizeof(PushConstants), &pc);
@@ -385,7 +370,7 @@ int main() {
     destroy_image(&depth_att);
     destroy_image(&normal_att);
 
-    vmaDestroyBuffer(vkg.vma, vibuf.buffer, vibuf.alloc);
+    vmaDestroyBuffer(vkg.vma, scene.vibuf.buffer, scene.vibuf.alloc);
 
     vkg_shutdown();
     arena_report(&memory.total); arena_report(&memory.scratch);
