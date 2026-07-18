@@ -110,10 +110,11 @@ void change_shader(Pipeline* pipeline, const char* filename, shaderc_shader_kind
 }
 
 void destroy_pipeline(Pipeline* pipeline) {
-    vkDestroyPipeline(vkg.device, pipeline->pl, NULL);
+    vkDestroyPipelineLayout(vkg.device, pipeline->info.layout, NULL);
     for (int i=0; i < pipeline->info.stageCount; i++) {
         vkDestroyShaderModule(vkg.device, pipeline->info.pStages[i].module, NULL);
     }
+    vkDestroyPipeline(vkg.device, pipeline->pl, NULL);
 }
 
 int get_format_pixel_size(VkFormat format) {

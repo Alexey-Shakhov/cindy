@@ -363,7 +363,6 @@ int main() {
 
     destroy_pipeline(&pipeline);
 
-    vkDestroyPipelineLayout(vkg.device, pipeline_layout, NULL);
     vmaDestroyBuffer(vkg.vma, shader_data_buffer.buffer, shader_data_buffer.alloc);
 
     destroy_image(&color_att);
