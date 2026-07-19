@@ -20,6 +20,4 @@ void main() {
 
     out_color = texture(color_map, in_uv) * light_color * brightness;
     out_color = pow(out_color, vec4(6.0));
-
-    return;
 }

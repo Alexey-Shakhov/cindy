@@ -8,6 +8,4 @@ void main() {
 
     gl_Position = vec4(x, y, 0.0, 1.0);
     out_uv = vec2((x + 1.0) * 0.5, (y + 1.0) * 0.5);
-
-    return;
 }

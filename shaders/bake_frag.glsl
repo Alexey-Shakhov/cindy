@@ -40,6 +40,4 @@ void main()
 
     vec3 n = normalize(in_view_normal);
     outNormal = vec4(n * 0.5 + 0.5, 1.0);
-
-    return;
 }

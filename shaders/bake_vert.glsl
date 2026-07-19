@@ -25,6 +25,4 @@ void main()
     gl_Position = pc.scene_uniforms.proj * view * pc.model * vec4(in_position, 1.0);
     mat3x3 model_view = mat3(view * pc.model);
     out_view_normal = normalize(model_view * in_normal);
-
-    return;
 }
